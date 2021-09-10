@@ -121,6 +121,7 @@ class Fuzzer:
                 if current_file is None:
                     raise ValueError(f"Got line {line} without file")
                 feedback_files[current_file].append(line.strip())
+        return feedback_files
 
     @staticmethod
     def randomize(original, randomized, cases, seed):
@@ -177,7 +178,7 @@ class Fuzzer:
         self.alternate_limit = not self.alternate_limit
         return test_data.run_submission(program, args, self.time_limit, time_limit_high)
 
-    def run_random_case(self):
+    def run_random_case(self, language_key):
         args = default_args()
         args.bail_on_error = False
         args.parts = ["submissions"]
@@ -204,30 +205,21 @@ class Fuzzer:
                 fail_path_rte.mkdir(parents=True)
 
                 lang = languages.load_language_config()
-                language = lang.detect_language([str(path) for path in self.source_directory.iterdir()])
+                language = None
+                if language_key is not None:
+                    language = lang.languages.get(language_key, None)
+                if language is None:
+                    language = lang.detect_language([str(path) for path in self.source_directory.iterdir()])
+                self.logger.info("Detected language %s", language.name)
                 program = SourceCode(path=str(self.source_directory.absolute()),
                                      language=language, work_dir=problem.tmpdir)
 
-                self.logger.info('Compiling program %s', program.name)
-                if not program.compile():
-                    raise ValueError(f'Compile error for program {program.name}')
+                self.logger.info("Compiling program %s", program.name)
+                (compilation_result, error) = program.compile()
+                if not compilation_result:
+                    raise ValueError(f'Compile error for program {program.name}: {error}')
 
-                # prepare the things we will need
                 self.run_make("generators")
-
-                # solutions = [path for path in (self.problem_directory / "submissions" / "accepted").iterdir()]
-                # chosen_solution = None
-                # for ending in ["cpp", "java", "py", "py3"]:
-                #     for solution in solutions:
-                #         if solution.name.endswith(ending):
-                #             chosen_solution = solution
-                #             break
-                #     if chosen_solution is not None:
-                #         break
-                # if chosen_solution is None:
-                #     chosen_solution = next(iter(solutions))
-                #
-                # self.run_make("anysolution")
 
                 failed_wa = 0
                 failed_rte = 0
@@ -460,8 +452,8 @@ class FuzzingThread(threading.Thread):
             try:
                 self.logger.debug('%s: Starting fuzzing', self.fuzzer_id)
                 problem_directory = self.problem_repository / self.submission["problem"]
-                Fuzzer(self.submission["secret_file"], source_directory, problem_directory,
-                       output_directory, submission_logger, self.time_limit).run_random_case()
+                Fuzzer(self.submission["secret_file"], source_directory, problem_directory, output_directory,
+                       submission_logger, self.time_limit).run_random_case(self.submission.get("lang", None))
                 self.logger.debug('%s: Fuzzing finished.', self.fuzzer_id)
 
                 # Find failing cases
