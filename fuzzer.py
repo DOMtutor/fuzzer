@@ -139,6 +139,8 @@ class RunResult(object):
 
 
 class FuzzingRun(object):
+    RANDOM_RUNS = 200
+
     @staticmethod
     def parse_feedback(result: SubmissionResult):
         if result.additional_info is None:
@@ -217,7 +219,7 @@ class FuzzingRun(object):
             raise MakeError(rule, out, err)
 
     def __enter__(self):
-        FuzzingRun.randomize(self.case_seed_file, self.seed_file, Fuzzer.RANDOMIZED_CASES, self.seed)
+        FuzzingRun.randomize(self.case_seed_file, self.seed_file, FuzzingRun.RANDOM_RUNS, self.seed)
         self.run_make(self.input_file)
 
         self.logger.debug("Running program on submission")
