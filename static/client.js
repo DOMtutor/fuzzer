@@ -4,11 +4,12 @@ const warn = function (message) {
         "<div class=\"alert alert-success\"><a href=\"#\" class=\"close\" data-dismiss=\"alert\" aria-label=\"close\">&times;</a><strong>" + message + "</div>");
 };
 
-const display = function (cases, prefix) {
+const display = function (cases) {
     const keys = Object.keys(cases);
 
     for (let i = 0; i < keys.length; i++) {
-        const name = prefix + "" + (i + 1);
+        const type = keys[i];
+        const name = type + "" + (i + 1);
         const tab = $("<li><a data-toggle=\"tab\" href=\"#" + name + "\">" + name + "</a></li>");
         const content = $("<div id=\"" + name + "\" class=\"tab-pane fade\">");
 
@@ -151,26 +152,22 @@ const submit_listener = function (event) {
     let uuid = 0;
 
     // Periodical update function - uses the submission uuid
-    const update_fun = function () {
-        console.log("Sending fuzzing update query for " + uuid);
+    let update_fun = function () {
         $.ajax({
             type: 'GET',
             url: "/submission/" + uuid,
             success: function (response) {
-                console.log("Got fuzzing update" + JSON.stringify(response, null, 2));
+                console.log("Got update" + JSON.stringify(response, null, 2));
 
                 if (response.success) {
                     if (!response.state.finished) {
                         $("#log").val(response.state.log + "\n\nStill running...");
-                        // continue updating
                         setTimeout(update_fun, 500);
                     } else {
                         $("#log").val(response.state.log);
-                        // console.log(JSON.stringify(state.cases, null, 2))
 
                         if ("cases" in response.state) {
-                            display(response.state.cases.wa, "WA");
-                            display(response.state.cases.rte, "RTE");
+                            display(response.state.cases);
                         }
 
                         $('#submit-spinner').removeClass("spinner-border spinner-border-sm");
@@ -181,12 +178,15 @@ const submit_listener = function (event) {
                 } else {
                     console.log("Unsuccessful update poll " + JSON.stringify(response, null, 2));
                     warn("Error in update request");
-                    l.stop();
+
+                    $('#submit-spinner').removeClass("spinner-border spinner-border-sm");
+                    $('#submit').prop("disabled", false);
                 }
             },
             error: function (response) {
                 warn("Error in update request.");
-                l.stop();
+                $('#submit-spinner').removeClass("spinner-border spinner-border-sm");
+                $('#submit').prop("disabled", false);
             }
         });
     };
