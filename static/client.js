@@ -1,13 +1,13 @@
 const warn = function (message) {
-    $('.alerts').html($('.alerts').html() +
+    const alerts = $('.alerts');
+    alerts.html(alerts.html() +
         "<div class=\"alert alert-success\"><a href=\"#\" class=\"close\" data-dismiss=\"alert\" aria-label=\"close\">&times;</a><strong>" + message + "</div>");
 };
 
 const display = function (cases, prefix) {
-    // build tabs
     const keys = Object.keys(cases);
 
-    for (i = 0; i < keys.length; i++) {
+    for (let i = 0; i < keys.length; i++) {
         const name = prefix + "" + (i + 1);
         const tab = $("<li><a data-toggle=\"tab\" href=\"#" + name + "\">" + name + "</a></li>");
         const content = $("<div id=\"" + name + "\" class=\"tab-pane fade\">");
@@ -21,12 +21,12 @@ const display = function (cases, prefix) {
         const text = $("<textarea rows=10, cols=80 readonly=\"true\" wrap=\"off\"></textarea>");
         text.val(JSON.stringify(cases[keys[i]], null, 2))
 
-        const copycase = $("<button class=\"btn btn-md btn-primary\" data-clipboard-action=\"copy\">Case</button>");
-        new Clipboard(copycase.get()[0]);
-        const copyanswer = $("<button class=\"btn btn-md btn-primary\" data-clipboard-action=\"copy\">Answer</button>");
-        new Clipboard(copyanswer.get()[0]);
-        const copytext = $("<button class=\"btn btn-md btn-primary\" data-clipboard-action=\"copy\">Text</button>");
-        new Clipboard(copytext.get()[0]);
+        const copy_case = $("<button class=\"btn btn-md btn-primary\" data-clipboard-action=\"copy\">Case</button>");
+        new Clipboard(copy_case.get()[0]);
+        const copy_answer = $("<button class=\"btn btn-md btn-primary\" data-clipboard-action=\"copy\">Answer</button>");
+        new Clipboard(copy_answer.get()[0]);
+        const copy_text = $("<button class=\"btn btn-md btn-primary\" data-clipboard-action=\"copy\">Text</button>");
+        new Clipboard(copy_text.get()[0]);
 
         // Find files
         const files = Object.keys(cases[keys[i]]);
@@ -40,31 +40,31 @@ const display = function (cases, prefix) {
             }
         }
 
-        copycase.attr("data-clipboard-text", infile);
-        copyanswer.attr("data-clipboard-text", solution);
-        copytext.attr("data-clipboard-text",
+        copy_case.attr("data-clipboard-text", infile);
+        copy_answer.attr("data-clipboard-text", solution);
+        copy_text.attr("data-clipboard-text",
             "Here's a case to think about:\n" + infile + "\nThe correct answer should be:\n" + solution
         );
 
-        $("#casetabs").append(tab);
+        $("#cases_tabs").append(tab);
         content.append(text);
         content.append($("<br />"));
-        content.append(copycase);
-        content.append(copyanswer);
-        content.append(copytext);
-        $("#casetabcontents").append(content);
+        content.append(copy_case);
+        content.append(copy_answer);
+        content.append(copy_text);
+        $("#cases_tab_contents").append(content);
     }
 };
 
-// File name listener
-const change_listener = function (event) {
+const source_change_listener = function (event) {
     const source = $("#source").val();
+    const source_lang = $("#source_lang");
 
     const java_regex = /public\s+(static\s+)?(final\s+)?class\s+([a-zA-Z_$][a-zA-Z\d_$]*)/;
     const java_match = source.match(java_regex);
     if (java_match && java_match[3]) {
         console.log("Guessing source to be java, class name " + java_match[3]);
-        $("#source_lang").val("java").change();
+        source_lang.val("java").change();
         $("#java_name").val(java_match[3]);
         return;
     }
@@ -73,7 +73,7 @@ const change_listener = function (event) {
     for (let regex of python_regex) {
         if (source.match(regex)) {
             console.log("Guessing source to be python, since it matches " + regex.toString());
-            $("#source_lang").val("python").change();
+            source_lang.val("python").change();
             return;
         }
     }
@@ -82,17 +82,27 @@ const change_listener = function (event) {
     for (let regex of cpp_regex) {
         if (source.match(regex)) {
             console.log("Guessing source to be cpp, since it matches " + regex.toString());
-            $("#source_lang").val("cpp").change();
+            source_lang.val("cpp").change();
             return;
         }
     }
 
     console.log("No source guess")
-    $("#source_lang").val("unknown").change();
+    source_lang.val("unknown").change();
 };
 
 const submit_listener = function (event) {
     event.preventDefault();
+
+    // Problem
+    const problem = $('#problem_name').val();
+    if (!problem) {
+        warn("No problem selected!");
+        return;
+    }
+
+    // Secret file
+    let secret_name = $('#secret_name').val();
 
     // Language
     const source_lang = $('#source_lang').val();
@@ -117,25 +127,11 @@ const submit_listener = function (event) {
         lang = null;
     }
 
-    // Problem
-    const problem = $('#problem_name').val();
-    if (!problem) {
-        warn("No problem selected!");
-        return;
-    }
-
-    // Secret file
-    let secret_name = $('#secret_name').val();
-    if (secret_name === "") {
-        secret_name = "small1";
-    }
-
     const time_limit = parseInt($('#time_limit').val());
     const runs = parseInt($('#runs').val());
 
-    // Button state
-    const l = Ladda.create(document.querySelector('#submitter'));
-    l.start();
+    $('#submit-spinner').addClass("spinner-border spinner-border-sm");
+    $('#submit').prop("disabled", true);
 
     console.log("Submitting as " + source_name);
     let source = {};
@@ -177,7 +173,8 @@ const submit_listener = function (event) {
                             display(response.state.cases.rte, "RTE");
                         }
 
-                        l.stop();
+                        $('#submit-spinner').removeClass("spinner-border spinner-border-sm");
+                        $('#submit').prop("disabled", false);
                     }
                     // Scroll the textarea all the way down
                     $("#log").scrollTop($("#log")[0].scrollHeight);
@@ -201,8 +198,8 @@ const submit_listener = function (event) {
     $("#log").val("");
     $("#cases").val("");
 
-    $("#casetabs").empty();
-    $("#casetabcontents").empty();
+    $("#cases_tabs").empty();
+    $("#cases_tab_contents").empty();
 
     // Initial submission request - if succeeded, will start periodical update requests via updatefun
     $.ajax({
@@ -232,32 +229,38 @@ const submit_listener = function (event) {
     });
 };
 
-$("#source").blur(change_listener);
-$("#source").change(change_listener);
-
-$("#target").submit(submit_listener);
+$("#source").blur(source_change_listener);
+$("#source").change(source_change_listener);
+$("#submit").click(submit_listener);
 
 $("#source_lang").change(function (event) {
+    const java_name = $("#java_name");
     if ($("#source_lang").val() === "java") {
-        $("#java_name").prop("disabled", false);
+        java_name.prop("disabled", false);
     } else {
-        $("#java_name").prop("disabled", true);
-        $("#java_name").val("");
+        java_name.prop("disabled", true);
+        java_name.val("");
     }
 });
 
-$("#problem_name").change(function (event) {
+function add_seeds(data) {
+
+}
+
+$("#problem_name").blur(function (event) {
     const problem_name = $("#problem_name").val()
     const secret_name = $("#secret_name")
 
     secret_name.prop("disabled", true);
-    secret_name.typeahead('destroy')
+    secret_name.empty();
     if (problem_name !== null) {
         $.get("/problem/" + problem_name + "/seeds", function (data) {
-            console.log(data)
             if (data.success) {
                 secret_name.prop("disabled", false);
-                secret_name.typeahead({source: data.seeds});
+                for (const seed of data.seeds) {
+                    secret_name.append(new Option(seed, seed));
+                }
+
                 for (const seed of data.seeds) {
                     if (seed.startsWith("small")) {
                         secret_name.val(seed).change();
@@ -272,9 +275,24 @@ $("#problem_name").change(function (event) {
     }
 })
 
-// Populate typeahead
-$.get('/problems', function (data) {
-    let problem_name = $("#problem_name")
-    problem_name.typeahead({source: data.problems});
-    problem_name.prop("disabled", false);
-}, 'json');
+function add_problems(data) {
+    const problem_list = $('#problem_list')
+    let fragment = document.createDocumentFragment();
+    for (const problem of data) {
+        const option = document.createElement('option');
+        option.textContent = problem;
+        fragment.append(option);
+    }
+    problem_list.append(fragment);
+    $('#problem_name').after(problem_list);
+}
+
+$(document).ready(function () {
+    $.get('/problems', function (data) {
+        if (data.success) {
+            add_problems(data.problems);
+        } else {
+            warn("Failed to fetch problems")
+        }
+    });
+});

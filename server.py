@@ -50,7 +50,7 @@ def show_problems():
 def get_problem_seeds(problem_name):
     secret_path = problem_repository / problem_name / "data" / "secret"
     if not secret_path.is_dir():
-        return jsonify(success=False, errors=["Problem does not exist"])
+        return jsonify(success=False, errors=["No such problem"])
     seeds = [seed.name[:-5] for seed in secret_path.glob("*.seed") if not seed.name.startswith("fuzzer_")]
     return jsonify(success=True, seeds=seeds)
 
