@@ -17,7 +17,7 @@ sys.path.append("problemtools")
 
 from problemtools import languages, verifyproblem
 from problemtools.run import SourceCode, Program
-from problemtools.verifyproblem import ProblemAspect, Problem, TestCaseGroup, re_argument, SubmissionResult, TestCase
+from problemtools.verifyproblem import ProblemAspect, Problem, TestCaseGroup, re_argument, SubmissionResult
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +143,6 @@ class RunResult(object):
         for name, content in self.feedback.items():
             with (output_dir / name).open(mode="wt") as f:
                 f.writelines(content)
-
 
 
 class FuzzingRun(object):
@@ -380,7 +379,8 @@ class FuzzingThread(threading.Thread):
                     result[f"{category}_{case_dir.name}"] = data
         return result
 
-    def __init__(self, fuzzer_id, submission_logger: logging.Logger, submission, problem_repository, time_limit=TIMEOUT):
+    def __init__(self, fuzzer_id, submission_logger: logging.Logger, submission, problem_repository,
+                 time_limit=TIMEOUT):
         threading.Thread.__init__(self)
 
         self.fuzzer_id = fuzzer_id
