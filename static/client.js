@@ -10,8 +10,8 @@ const display = function (cases) {
     for (let i = 0; i < keys.length; i++) {
         const type = keys[i];
         const name = type + "" + (i + 1);
-        const tab = $("<li><a data-toggle=\"tab\" href=\"#" + name + "\">" + name + "</a></li>");
-        const content = $("<div id=\"" + name + "\" class=\"tab-pane fade\">");
+        const tab = $('<li><a data-toggle="tab" href="#' + name + '">' + name + '</a></li>');
+        const content = $('<div id="' + name + '" class="tab-pane fade">');
 
         if (i === 0) {
             tab.addClass("active");
@@ -19,14 +19,14 @@ const display = function (cases) {
             content.addClass("active");
         }
 
-        const text = $("<textarea rows=10, cols=80 readonly=\"true\" wrap=\"off\"></textarea>");
+        const text = $('<textarea rows=10, cols=80 readonly="readonly" wrap="soft"></textarea>');
         text.val(JSON.stringify(cases[keys[i]], null, 2))
 
-        const copy_case = $("<button class=\"btn btn-md btn-primary\" data-clipboard-action=\"copy\">Case</button>");
+        const copy_case = $('<button class="btn btn-md btn-primary" data-clipboard-action="copy">Case</button>');
         new Clipboard(copy_case.get()[0]);
-        const copy_answer = $("<button class=\"btn btn-md btn-primary\" data-clipboard-action=\"copy\">Answer</button>");
+        const copy_answer = $('<button class="btn btn-md btn-primary" data-clipboard-action="copy">Answer</button>');
         new Clipboard(copy_answer.get()[0]);
-        const copy_text = $("<button class=\"btn btn-md btn-primary\" data-clipboard-action=\"copy\">Text</button>");
+        const copy_text = $('<button class="btn btn-md btn-primary" data-clipboard-action="copy">Text</button>');
         new Clipboard(copy_text.get()[0]);
 
         // Find files
@@ -57,7 +57,7 @@ const display = function (cases) {
     }
 };
 
-const source_change_listener = function (event) {
+const source_change = function () {
     const source = $("#source").val();
     const source_lang = $("#source_lang");
 
@@ -90,11 +90,18 @@ const source_change_listener = function (event) {
 
     console.log("No source guess")
     source_lang.val("unknown").change();
-};
+}
 
-const submit_listener = function (event) {
-    event.preventDefault();
+const toggle_button = function (ready) {
+    if (ready) {
+        $('#submit-spinner').removeClass("spinner-border spinner-border-sm");
+    } else {
+        $('#submit-spinner').addClass("spinner-border spinner-border-sm");
+    }
+    $('#submit').prop("disabled", !ready);
+}
 
+const submit_problem = function () {
     // Problem
     const problem = $('#problem_name').val();
     if (!problem) {
@@ -131,9 +138,6 @@ const submit_listener = function (event) {
     const time_limit = parseInt($('#time_limit').val());
     const runs = parseInt($('#runs').val());
 
-    $('#submit-spinner').addClass("spinner-border spinner-border-sm");
-    $('#submit').prop("disabled", true);
-
     console.log("Submitting as " + source_name);
     let source = {};
     source[source_name] = $('#source').val();
@@ -151,6 +155,7 @@ const submit_listener = function (event) {
 
     let uuid = 0;
 
+    const log = $("#log");
     // Periodical update function - uses the submission uuid
     let update_fun = function () {
         $.ajax({
@@ -160,33 +165,28 @@ const submit_listener = function (event) {
                 console.log("Got update" + JSON.stringify(response, null, 2));
 
                 if (response.success) {
-                    if (!response.state.finished) {
-                        $("#log").val(response.state.log + "\n\nStill running...");
-                        setTimeout(update_fun, 500);
-                    } else {
-                        $("#log").val(response.state.log);
+                    if (response.state.finished) {
+                        log.val(response.state.log);
 
                         if ("cases" in response.state) {
                             display(response.state.cases);
                         }
-
-                        $('#submit-spinner').removeClass("spinner-border spinner-border-sm");
-                        $('#submit').prop("disabled", false);
+                        toggle_button(true);
+                    } else {
+                        log.val(response.state.log + "\n\nStill running...");
+                        setTimeout(update_fun, 500);
                     }
                     // Scroll the textarea all the way down
-                    $("#log").scrollTop($("#log")[0].scrollHeight);
+                    log.scrollTop(log[0].scrollHeight);
                 } else {
                     console.log("Unsuccessful update poll " + JSON.stringify(response, null, 2));
                     warn("Error in update request");
-
-                    $('#submit-spinner').removeClass("spinner-border spinner-border-sm");
-                    $('#submit').prop("disabled", false);
+                    toggle_button(true);
                 }
             },
             error: function (response) {
                 warn("Error in update request.");
-                $('#submit-spinner').removeClass("spinner-border spinner-border-sm");
-                $('#submit').prop("disabled", false);
+                toggle_button(true);
             }
         });
     };
@@ -195,13 +195,12 @@ const submit_listener = function (event) {
     $('.alerts').html("");
 
     // Empty result form
-    $("#log").val("");
+    log.val("");
     $("#cases").val("");
-
     $("#cases_tabs").empty();
     $("#cases_tab_contents").empty();
 
-    // Initial submission request - if succeeded, will start periodical update requests via updatefun
+    // Initial submission request - if succeeded, will start periodical update requests via update fun
     $.ajax({
         type: 'POST',
         url: "/submission",
@@ -209,71 +208,51 @@ const submit_listener = function (event) {
         data: JSON.stringify(request),
         success: function (response) {
             if (response.success) {
+                toggle_button(false);
                 $("#uuid").val(response.id);
                 uuid = response.id;
-                // updating every x seconds while still running
                 console.log("Started fuzzing with id " + response.id);
-                // Start update polling
                 update_fun();
             } else {
                 warn("Could not start fuzzing " + response.errors);
                 console.log("Could not start fuzzing " + JSON.stringify(response, null, 2))
-                // reenable button
-                l.stop();
+                toggle_button(true);
             }
         },
-        error: function (response) {
+        error: function (_) {
             warn("Error in fuzzing request.");
-            l.stop();
         }
     });
-};
-
-$("#source").blur(source_change_listener);
-$("#source").change(source_change_listener);
-$("#submit").click(submit_listener);
-
-$("#source_lang").change(function (event) {
-    const java_name = $("#java_name");
-    if ($("#source_lang").val() === "java") {
-        java_name.prop("disabled", false);
-    } else {
-        java_name.prop("disabled", true);
-        java_name.val("");
-    }
-});
-
-function add_seeds(data) {
-
 }
 
-$("#problem_name").blur(function (event) {
-    const problem_name = $("#problem_name").val()
-    const secret_name = $("#secret_name")
+function problem_change() {
+    const problem_name = $("#problem_name").val();
+    const secret_list = $("#secret_name");
+    secret_list.prop("disabled", true);
+    secret_list.empty();
 
-    secret_name.prop("disabled", true);
-    secret_name.empty();
-    if (problem_name !== null) {
-        $.get("/problem/" + problem_name + "/seeds", function (data) {
-            if (data.success) {
-                secret_name.prop("disabled", false);
-                for (const seed of data.seeds) {
-                    secret_name.append(new Option(seed, seed));
-                }
+    if (!(problem_name in $("#problem_list").options)) {
+        return;
+    }
+    $.get("/problem/" + problem_name + "/seeds", function (data) {
+        if (data.success) {
+            secret_list.prop("disabled", false);
+            for (const seed of data.seeds) {
+                secret_list.append(new Option(seed, seed));
+            }
 
-                for (const seed of data.seeds) {
-                    if (seed.startsWith("small")) {
-                        secret_name.val(seed).change();
-                        return
-                    }
-                }
-                if (data.seeds.length) {
-                    secret_name.val(data.seeds[0]).change();
+            for (const seed of data.seeds) {
+                if (seed.startsWith("small")) {
+                    secret_list.val(seed).change();
+                    return
                 }
             }
-        })
-    }
-})
+            if (data.seeds.length) {
+                secret_list.val(data.seeds[0]).change();
+            }
+        }
+    });
+}
 
 function add_problems(data) {
     const problem_list = $('#problem_list')
@@ -288,6 +267,34 @@ function add_problems(data) {
 }
 
 $(document).ready(function () {
+    const source_input = $("#source");
+
+    const source_change_listener = function (_) {
+        source_change();
+    };
+    source_input.blur(source_change_listener);
+    source_input.change(source_change_listener);
+
+    $("#submit").click(function (event) {
+        event.preventDefault();
+        submit_problem();
+    });
+    $("#problem_name").blur(function (_) {
+        problem_change();
+    });
+    problem_change();
+
+
+    $("#source_lang").change(function (event) {
+        const java_name = $("#java_name");
+        if ($("#source_lang").val() === "java") {
+            java_name.prop("disabled", false);
+        } else {
+            java_name.prop("disabled", true);
+            java_name.val("");
+        }
+    });
+
     $.get('/problems', function (data) {
         if (data.success) {
             add_problems(data.problems);
