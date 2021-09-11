@@ -75,14 +75,12 @@
                     <div class="me-3">
                         <label for="runs" class="form-label">Runs</label><br/>
                         <input type="number" size=10 class="form-control" id="runs"
-                               min="1" max="500" value="100"/>
+                               min="1" max="500" value="10"/>
                     </div>
                 </div>
 
-                <div class="mb-3">
-                    <label for="source" class="form-label">Source Code</label><br/>
-                    <textarea rows=10 class="form-control" style="width: 100%" id="source"></textarea><br/>
-                </div>
+                <label for="source" class="form-label">Source Code</label><br/>
+                <textarea rows=10 class="form-control" style="width: 100%" id="source"></textarea><br/>
             </form>
 
             <button class="btn btn-lg btn-primary" type="button" id="submit">
@@ -94,22 +92,21 @@
         <div class="col-6">
             <h2>Output</h2>
 
-            <div class="row">
+            <div class="row mb-2">
                 <label for="uuid" class="form-label">Fuzzing Id</label><br/>
                 <input type="text" class="form-control" readonly="readonly" size=60 id="uuid"/><br/>
             </div>
 
-            <div class="row">
+            <div class="row mb-2">
                 <label for="log" class="form-label">Log</label><br/>
-                <textarea rows=10 style="width: 100%" readonly="readonly" wrap="soft" id="log"></textarea>
+                <textarea class="form-control" rows=10 style="width: 100%" readonly="readonly" wrap="soft"
+                          id="log"></textarea>
             </div>
 
             <div class="row">
                 <label for="cases_tabs" class="form-label">Failing Cases</label><br/>
-                <ul class="nav nav-tabs" id="cases_tabs">
-                </ul>
-                <div class="tab-content" id="cases_tab_contents">
-                </div>
+                <ul class="nav nav-tabs" id="cases_tabs"></ul>
+                <div class="tab-content mb-2" id="cases_tab_contents"></div>
             </div>
         </div>
     </div>

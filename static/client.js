@@ -5,56 +5,119 @@ const warn = function (message) {
 };
 
 const display = function (cases) {
+    const cases_tabs = $("#cases_tabs");
+    const content = $("#cases_tab_contents");
+    cases_tabs.empty();
+    content.empty();
+    if (cases === null) {
+        return;
+    }
     const keys = Object.keys(cases);
 
+    let tabs_fragment = document.createDocumentFragment();
+    let content_fragment = document.createDocumentFragment();
+
     for (let i = 0; i < keys.length; i++) {
-        const type = keys[i];
-        const name = type + "" + (i + 1);
-        const tab = $('<li><a data-toggle="tab" href="#' + name + '">' + name + '</a></li>');
-        const content = $('<div id="' + name + '" class="tab-pane fade">');
+        const output_name = keys[i];
+
+        const tab = document.createElement("li")
+        tab.className = "nav-item";
+        tab.setAttribute("role", "presentation");
+
+        const button = document.createElement("button");
+        button.className = "nav-link";
+        button.id = "case_" + output_name + "_tab";
+        button.setAttribute("data-bs-toggle", "tab");
+        button.setAttribute("data-bs-target", "#case_" + output_name);
+        button.setAttribute("type", "button");
+        button.setAttribute("role", "tab");
+        button.appendChild(document.createTextNode(output_name));
+
+        tab.appendChild(button);
+
+        tabs_fragment.append(tab);
+
+        const content = document.createElement("div");
+        content.id = "case_" + output_name
+        content.className = "tab-pane fade";
+        content.setAttribute("role", "tabpanel");
+        content.setAttribute("aria-labelledby", "case_" + output_name);
 
         if (i === 0) {
-            tab.addClass("active");
-            content.addClass("in");
-            content.addClass("active");
+            tab.classList.add("active");
+            content.classList.add("show", "active");
         }
 
-        const text = $('<textarea rows=10, cols=80 readonly="readonly" wrap="soft"></textarea>');
-        text.val(JSON.stringify(cases[keys[i]], null, 2))
+        const text = document.createElement("textarea");
+        text.className = "form-control";
+        text.readOnly = true;
+        text.wrap = "soft";
+        text.rows = 10;
+        text.style.width = "100%"
+        text.appendChild(document.createTextNode(JSON.stringify(cases[keys[i]], null, 2)));
 
-        const copy_case = $('<button class="btn btn-md btn-primary" data-clipboard-action="copy">Case</button>');
-        new Clipboard(copy_case.get()[0]);
-        const copy_answer = $('<button class="btn btn-md btn-primary" data-clipboard-action="copy">Answer</button>');
-        new Clipboard(copy_answer.get()[0]);
-        const copy_text = $('<button class="btn btn-md btn-primary" data-clipboard-action="copy">Text</button>');
-        new Clipboard(copy_text.get()[0]);
+        content.appendChild(text);
 
-        // Find files
+        const copy_case = document.createElement("button");
+        copy_case.appendChild(document.createTextNode("Case"));
+        copy_case.className = "btn btn-secondary";
+        const copy_answer = document.createElement("button");
+        copy_answer.appendChild(document.createTextNode("Answer"));
+        copy_answer.className = "btn btn-secondary";
+        const copy_text = document.createElement("button");
+        copy_text.appendChild(document.createTextNode("Text"));
+        copy_text.className = "btn btn-primary"
+
         const files = Object.keys(cases[keys[i]]);
         let infile = "";
         let solution = "";
         for (let j = 0; j < files.length; j++) {
-            if (files[j].endsWith(".in")) {
-                infile = cases[keys[i]][files[j]]
-            } else if (files[j].endsWith(".ans")) {
-                solution = cases[keys[i]][files[j]];
+            let file = files[j];
+            if (file.endsWith(".in")) {
+                infile = cases[keys[i]][file]
+            } else if (file.endsWith(".ans")) {
+                solution = cases[keys[i]][file];
             }
         }
 
-        copy_case.attr("data-clipboard-text", infile);
-        copy_answer.attr("data-clipboard-text", solution);
-        copy_text.attr("data-clipboard-text",
-            "Here's a case to think about:\n" + infile + "\nThe correct answer should be:\n" + solution
-        );
+        copy_case.addEventListener("click", function (_) {
+            navigator.clipboard.writeText(infile).catch(function (_) {
+                console.log("Failed to write to clipboard")
+            });
+        })
+        copy_answer.addEventListener("click", function (_) {
+            navigator.clipboard.writeText(solution).catch(function (_) {
+                console.log("Failed to write to clipboard")
+            });
+        })
+        copy_text.addEventListener("click", function (_) {
+            let text =
+                "Here's a case to think about:\n" +
+                infile +
+                "\nThe correct answer should be:\n" +
+                solution
+            ;
+            navigator.clipboard.writeText(text).catch(function (_) {
+                console.log("Failed to write to clipboard")
+            });
+        })
 
-        $("#cases_tabs").append(tab);
-        content.append(text);
-        content.append($("<br />"));
-        content.append(copy_case);
-        content.append(copy_answer);
-        content.append(copy_text);
-        $("#cases_tab_contents").append(content);
+        const buttons_div = document.createElement("div");
+        buttons_div.style.display = "flex";
+        buttons_div.style.flexDirection = "row";
+        buttons_div.style.justifyContent = "flex-end";
+        buttons_div.style.alignItems = "baseline";
+        buttons_div.style.gap = "2px";
+
+        buttons_div.appendChild(copy_case);
+        buttons_div.appendChild(copy_answer);
+        buttons_div.appendChild(copy_text);
+        content.appendChild(buttons_div)
+        content_fragment.append(content);
     }
+
+    cases_tabs.append(tabs_fragment);
+    content.append(content_fragment);
 };
 
 const source_change = function () {
@@ -156,7 +219,7 @@ const submit_problem = function () {
     let uuid = 0;
 
     const log = $("#log");
-    // Periodical update function - uses the submission uuid
+
     let update_fun = function () {
         $.ajax({
             type: 'GET',
@@ -165,16 +228,12 @@ const submit_problem = function () {
                 console.log("Got update" + JSON.stringify(response, null, 2));
 
                 if (response.success) {
+                    log.val(response.state.log);
                     if (response.state.finished) {
-                        log.val(response.state.log);
-
-                        if ("cases" in response.state) {
-                            display(response.state.cases);
-                        }
+                        display(response.state.cases);
                         toggle_button(true);
                     } else {
-                        log.val(response.state.log + "\n\nStill running...");
-                        setTimeout(update_fun, 500);
+                        setTimeout(update_fun, 1000);
                     }
                     // Scroll the textarea all the way down
                     log.scrollTop(log[0].scrollHeight);
@@ -231,7 +290,10 @@ function problem_change() {
     secret_list.prop("disabled", true);
     secret_list.empty();
 
-    if (!(problem_name in $("#problem_list").options)) {
+    if (problems.indexOf(problem_name) < 0) {
+        console.log("SKIP")
+        console.log(problems)
+        console.log(problem_name)
         return;
     }
     $.get("/problem/" + problem_name + "/seeds", function (data) {
@@ -254,10 +316,17 @@ function problem_change() {
     });
 }
 
-function add_problems(data) {
+let problems = [];
+
+function set_problems(data) {
+    problems.length = 0;
+
     const problem_list = $('#problem_list')
     let fragment = document.createDocumentFragment();
+
     for (const problem of data) {
+        problems.push(problem);
+
         const option = document.createElement('option');
         option.textContent = problem;
         fragment.append(option);
@@ -282,8 +351,6 @@ $(document).ready(function () {
     $("#problem_name").blur(function (_) {
         problem_change();
     });
-    problem_change();
-
 
     $("#source_lang").change(function (_) {
         const java_name = $("#java_name");
@@ -297,7 +364,8 @@ $(document).ready(function () {
 
     $.get('/problems', function (data) {
         if (data.success) {
-            add_problems(data.problems);
+            set_problems(data.problems);
+            problem_change();
         } else {
             warn("Failed to fetch problems")
         }
