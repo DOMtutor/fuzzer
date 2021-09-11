@@ -7,4 +7,7 @@
 ## Procedure
 
  * `git submodule update --init --recursive`
- * `cd problemtools/support/checktestdata && make`
+ * `cd problemtools/support && make`
+ * `python3 -m venv venv`
+ * `. ./venv/bin/activate`
+ * `pip install -r requirements`

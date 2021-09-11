@@ -1,3 +1,4 @@
+import sys
 import logging
 import os
 import pathlib
@@ -12,9 +13,11 @@ from io import StringIO
 from pathlib import Path
 from typing import *
 
-from problemtools.problemtools import languages, verifyproblem
-from problemtools.problemtools.run import SourceCode, Program
-from problemtools.problemtools.verifyproblem import ProblemAspect, Problem, TestCaseGroup, re_argument, SubmissionResult
+sys.path.append("problemtools")
+
+from problemtools import languages, verifyproblem
+from problemtools.run import SourceCode, Program
+from problemtools.verifyproblem import ProblemAspect, Problem, TestCaseGroup, re_argument, SubmissionResult
 
 
 class MakeError(Exception):
