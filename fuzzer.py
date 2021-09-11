@@ -227,7 +227,7 @@ class FuzzingRun(object):
 
         self.logger.debug("Running program on submission")
         (result1, result2) = self.run_submission()
-        self.logger.debug("Received feedback %s", result1.verdict)
+        self.logger.debug("Received feedback %s / %s", result1.verdict, result2.verdict)
 
         if result1.verdict == "WA":
             self.logger.debug("Found problematic input, picking failing case")
