@@ -20,7 +20,8 @@ schema = {
                 "^.*$": {"type": "string", "minLength": 3}
             }
         },
-        "time_limit": {"type": "integer", "minimum": 0}
+        "time_limit": {"type": "integer", "minimum": 0},
+        "runs": {"type": "integer", "minimum": 0}
     },
     "required": ["problem", "lang", "sources", "time_limit"]
 }
@@ -42,7 +43,16 @@ def home():
 
 @app.route('/problems')
 def show_problems():
-    return jsonify(success=True, problems=[problem.name for problem in problems])
+    return jsonify(success=True, problems=problems)
+
+
+@app.route('/problem/<problem_name>/seeds', methods=['GET'])
+def get_problem_seeds(problem_name):
+    secret_path = problem_repository / problem_name / "data" / "secret"
+    if not secret_path.is_dir():
+        return jsonify(success=False, errors=["Problem does not exist"])
+    seeds = [seed.name[:-5] for seed in secret_path.glob("*.seed") if not seed.name.startswith("fuzzer_")]
+    return jsonify(success=True, seeds=seeds)
 
 
 @app.route('/status')
@@ -59,9 +69,8 @@ def start_fuzzing():
         return jsonify(success=False, errors=inputs.errors)
 
     data = request.get_json()
-
     fuzzing_id = str(uuid.uuid4())
-    state[fuzzing_id] = FuzzingThread(fuzzing_id, app.logger, data, 500, problem_repository)
+    state[fuzzing_id] = FuzzingThread(fuzzing_id, app.logger, data, problem_repository)
     state[fuzzing_id].start()
 
     return jsonify(success=True, id=fuzzing_id)
@@ -100,6 +109,12 @@ if __name__ == '__main__':
     logging.getLogger("submission").setLevel(logging.DEBUG)
 
     problem_repository = Path("problems")
-    problems = [path.parent for path in problem_repository.glob("*/problem.yaml")]
+    problems = []
+    for path in problem_repository.glob("*/problem.yaml"):
+        problem = path.parent
+        secret_dir = problem / "data" / "secret"
+        if any(not secret.name.startswith("fuzzer_") for secret in secret_dir.glob("*.seed")):
+            problems.append(problem.name)
 
+    logging.getLogger().info("Found %d problems with seeds", len(problems))
     app.run()

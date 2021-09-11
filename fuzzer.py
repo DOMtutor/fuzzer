@@ -12,55 +12,19 @@ from io import StringIO
 from pathlib import Path
 from typing import *
 
-from problemtools.problemtools import languages
-from problemtools.problemtools.verifyproblem import ProblemAspect, Problem, TestCaseGroup, re_argument, default_args
-from problemtools.problemtools.run import SourceCode
+from problemtools.problemtools import languages, verifyproblem
+from problemtools.problemtools.run import SourceCode, Program
+from problemtools.problemtools.verifyproblem import ProblemAspect, Problem, TestCaseGroup, re_argument, SubmissionResult
 
 
-class Picker:
-    def __init__(self, layout_file: Path):
-        with layout_file.open(mode="rt") as f:
-            empty = sum(not line.strip() for line in f)
-            f.seek(0)
-            cases = int(f.readline())
-            if cases < 3:
-                raise ValueError("Given test case does not have at least 3 cases")
-            if empty not in [0, 1, cases - 1, cases]:
-                raise ValueError("could not deduce testcase layout")
-            self.preamble = False
-            self.single_line = False
-            if empty == 1 or empty == cases:
-                self.preamble = True
-            if empty < 2:
-                self.single_line = True
+class MakeError(Exception):
+    def __init__(self, rule, out, err):
+        self.rule = rule
+        self.out = out
+        self.err = err
 
-    def split_case(self, case_file: Path, first):
-        with case_file.open(mode="rt") as f:
-            cases = int(f.readline())
-            half = cases // 2
 
-            if first:
-                ret = [str(half) + "\n"]
-            else:
-                ret = [str(cases - half) + "\n"]
-
-            if self.preamble:
-                # read and save preamble
-                ret = ret + self._read_to_empty(f) + ["\n"]
-
-            for i in range(cases):
-                if (i < half) == first:
-                    ret = ret + self._read_case(f)
-                    if not self.single_line:
-                        ret += ["\n"]
-                else:
-                    self._read_case(f)
-
-            if not self.single_line and len(ret) > 1:
-                # remove last empty line
-                ret.pop()
-            return ret
-
+class ProblemLayout(object):
     @staticmethod
     def first_failing_case(judge_message, solution):
         tokens = judge_message[0].split()
@@ -78,38 +42,105 @@ class Picker:
         raise ValueError(f"Found no failing test case from message {judge_message}")
 
     @staticmethod
-    def _read_to_empty(f):
+    def read_to_empty(f):
         res = []
         while line := f.readline().strip():
             res.append(line)
         return res
 
+    def __init__(self, layout_file: Path):
+        with layout_file.open(mode="rt") as f:
+            empty = sum(not line.strip() for line in f)
+            f.seek(0)
+            cases = int(f.readline())
+            if cases < 3:
+                raise ValueError("Given test case does not have at least 3 cases")
+            if empty not in [0, 1, cases - 1, cases]:
+                raise ValueError("Could not deduce testcase layout")
+            self.preamble = False
+            self.single_line = False
+            if empty == 1 or empty == cases:
+                self.preamble = True
+            if empty < 2:
+                self.single_line = True
+
     def _read_case(self, f):
         if self.single_line:
             return [f.readline()]
-        return self._read_to_empty(f)
+        return ProblemLayout.read_to_empty(f)
 
-    def pick_case(self, case_file, case_number):
-        with case_file.open(mode="rt") as f:
+    def split_case(self, input_file: Path):
+        with input_file.open(mode="rt") as f:
+            cases = int(f.readline())
+            half = cases // 2
+
+            first_part = [str(half)]
+            second_part = [str(cases - half)]
+
+            if self.preamble:
+                # read and save preamble
+                preamble = ProblemLayout.read_to_empty(f)
+                first_part += preamble + [""]
+                second_part += preamble + [""]
+
+            for i in range(cases):
+                destination = first_part if i < half else second_part
+                destination += self._read_case(f)
+                if not self.single_line:
+                    destination += [""]
+
+        if not self.single_line:
+            if len(first_part) > 1:
+                first_part.pop()
+            if len(second_part) > 1:
+                second_part.pop()
+        return first_part, second_part
+
+    def pick_case(self, input_file, case_number):
+        with input_file.open(mode="rt") as f:
             cases = int(f.readline())
             if case_number < 1 or case_number > cases:
                 raise ValueError(f"invalid case number {case_number}")
 
-            ret = ["1\n"]
+            ret = ["1"]
             if self.preamble:
-                ret += self._read_to_empty(f) + ["\n"]
+                ret += ProblemLayout.read_to_empty(f) + [""]
             for _ in range(case_number - 1):
                 self._read_case(f)
             ret = ret + self._read_case(f)
             return ret
 
 
-class Fuzzer:
-    RANDOMIZED_CASES = 500
-    MAX_FAILS = 3
+class RunResult(object):
+    def __init__(self, problem, seed_file: Path, input_file: Path, answer_file: Path,
+                 verdict: str, feedback: Dict[str, str]):
+        self.verdict = verdict
+        self.feedback = feedback
 
+        self.problem = problem
+        self.seed_file = seed_file
+        self.input_file = input_file
+        self.answer_file = answer_file
+
+    def copy_data(self, output_dir: Path):
+        with (output_dir / "verdict").open("wt") as f:
+            f.write(self.verdict)
+
+        shutil.copy(self.seed_file, output_dir / "case.seed")
+        shutil.copy(self.input_file, output_dir / "case.in")
+        shutil.copy(self.answer_file, output_dir / "case.ans")
+
+        program_output = self.problem.tmpdir / "output"
+        if os.path.isfile(program_output):
+            shutil.copy(program_output, output_dir / "case.out")
+        for name, content in self.feedback.items():
+            with (output_dir / name).open(mode="wt") as f:
+                f.writelines(content)
+
+
+class FuzzingRun(object):
     @staticmethod
-    def parse_feedback(result):
+    def parse_feedback(result: SubmissionResult):
         if result.additional_info is None:
             return {}
         feedback_files = defaultdict(list)
@@ -138,266 +169,180 @@ class Fuzzer:
                             f_r.write(line)
                         written += 1
 
+    def __init__(self, time_limit: float, problem: Problem, test_data: TestCaseGroup,
+                 program: Program, logger: logging.Logger, case_seed_file, case_directory):
+        self.time_limit = time_limit
+        self.problem = problem
+        self.test_data = test_data
+        self.program = program
+        self.logger = logger
+
+        self.alternate_limit = False
+
+        self.case_seed_file = case_seed_file
+        self.case_directory = case_directory
+        self.seed = str(random.getrandbits(63))
+        self.seed_file = case_directory / f"fuzzing_{self.seed}.seed"
+        self.input_file = case_directory / f"fuzzing_{self.seed}.in"
+        self.answer_file = case_directory / f"fuzzing_{self.seed}.ans"
+
+        self.problem_directory = Path(problem.probdir).absolute()
+
+        self.args = verifyproblem.default_args()
+        self.args.bail_on_error = False
+        self.args.parts = ["submissions"]
+        self.args.problemdir = self.problem.probdir
+        self.args.data_filter = re_argument(f"fuzzing_{self.seed}")
+
+    def write_case(self, case: List[str]):
+        with self.input_file.open(mode="wt") as f:
+            f.writelines(case)
+
+    def run_submission(self) -> Tuple[SubmissionResult, SubmissionResult]:
+        self.run_make(self.answer_file)
+
+        # Trick the cache key ...
+        time_limit_high = self.time_limit * 2 + (0.001 if self.alternate_limit else 0.0)
+        self.alternate_limit = not self.alternate_limit
+        return self.test_data.run_submission(self.program, self.args, self.time_limit, time_limit_high)
+
     def run_make(self, rule: Union[str, Path]):
         self.logger.debug("Make %s", rule)
         if isinstance(rule, Path):
             rule = rule.relative_to(self.problem_directory)
         process = subprocess.Popen(["make", rule], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    encoding="utf-8", cwd=str(self.problem_directory))
-        out, err = process.communicate()
+        out, err = process.communicate(timeout=10)
         if process.returncode != 0:
-            raise RuntimeError(f"make {rule} failed\n===\n{out}\n===\n{err}")
+            raise MakeError(rule, out, err)
 
-    def copy_data(self, data_dir: Path, tmpdir: Path, seed_file: Path, input_file: Path, answer_file: Path,
-                  feedback: Dict[str, List[str]]):
-        shutil.copy(seed_file, data_dir / "case.seed")
-        shutil.copy(input_file, data_dir / "case.in")
-        shutil.copy(answer_file, data_dir / "case.ans")
+    def __enter__(self):
+        FuzzingRun.randomize(self.case_seed_file, self.seed_file, Fuzzer.RANDOMIZED_CASES, self.seed)
+        self.run_make(self.input_file)
 
-        output = tmpdir / "output"
-        if os.path.isfile(output):
-            shutil.copy(output, data_dir / "case.out")
-        for name, content in feedback.items():
-            with (data_dir / name).open(mode="wt") as f:
-                f.writelines(content)
+        self.logger.debug("Running program on submission")
+        (result1, result2) = self.run_submission()
+        self.logger.debug("Received feedback %s", result1.verdict)
 
-    def __init__(self, case: str, source_directory: pathlib.Path, problem_directory: pathlib.Path,
-                 output_directory: pathlib.Path, logger, time_limit):
+        if result1.verdict == "WA":
+            self.logger.debug("Found problematic input, picking failing case")
+            feedback_files = FuzzingRun.parse_feedback(result1)
+            failing_case = ProblemLayout.first_failing_case(feedback_files["judgemessage.txt"], self.answer_file)
+
+            layout = ProblemLayout(self.input_file)
+            picked_case = layout.pick_case(self.input_file, failing_case)
+            self.write_case(picked_case)
+
+            self.logger.debug("Running program again on singular case")
+            (result1, result2) = self.run_submission()
+
+            run_feedback = FuzzingRun.parse_feedback(result1)
+            if result1.verdict == "WA":
+                run_verdict = "WA"
+            else:
+                run_verdict = "INC"
+        elif result1.verdict == "RTE":
+            # binary search for the error
+            self.logger.debug("Runtime error occurred, binary search for the test case")
+
+            layout = ProblemLayout(self.input_file)
+            first_half, second_half = layout.split_case(self.input_file)
+
+            while first_half[0] != "0\n":
+                self.write_case(first_half)
+
+                self.logger.debug("Running program again on half of remainder")
+                (result1, result2) = self.run_submission()
+                if result1.verdict == "RTE":
+                    self.logger.debug("RTE occurred in first half")
+                else:
+                    self.logger.debug("RTE occurred in second half")
+                    self.write_case(second_half)
+
+                first_half, second_half = layout.split_case(self.input_file)
+
+            self.logger.debug("Should have RTE case now")
+            self.write_case(second_half)
+
+            self.logger.debug("Running program on RTE case")
+            (result1, result2) = self.run_submission()
+
+            run_feedback = FuzzingRun.parse_feedback(result1)
+            if result1.verdict == "RTE":
+                run_verdict = "RTE"
+            else:
+                run_verdict = "INC"
+        else:
+            run_feedback = FuzzingRun.parse_feedback(result1)
+            run_verdict = result1.verdict
+
+        return RunResult(self.problem, self.seed_file, self.input_file, self.answer_file, run_verdict, run_feedback)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        for file in [self.input_file, self.seed_file, self.answer_file]:
+            try:
+                file.unlink(missing_ok=True)
+            except IOError as e:
+                self.logger.info("Failed to remove file %s", exc_info=e)
+
+
+class Fuzzer(object):
+    MAX_FAILS = 3
+
+    def __init__(self, case: str, source_directory: pathlib.Path, language: languages.Language,
+                 problem_directory: pathlib.Path, output_directory: pathlib.Path, run_count: int, logger, time_limit):
         self.case = case
-        self.source_directory = source_directory.absolute()
-        self.problem_directory = problem_directory.absolute()
-        self.output_directory = output_directory.absolute()
+        self.source_directory = source_directory.resolve().absolute()
+        self.problem_directory = problem_directory.resolve().absolute()
+        self.output_directory = output_directory.resolve().absolute()
         self.logger = logger
         self.time_limit = time_limit
+        self.language = language
+        self.run_count = run_count
 
-        self.alternate_limit = False
+        self.problem_data_directory = self.problem_directory / 'data'
 
-    def run_submission(self, test_data, program, args):
-        # Trick the cache key ...
-        time_limit_high = self.time_limit * 2 + (0.001 if self.alternate_limit else 0.0)
-        self.alternate_limit = not self.alternate_limit
-        return test_data.run_submission(program, args, self.time_limit, time_limit_high)
-
-    def run_random_case(self, language_key):
-        args = default_args()
-        args.bail_on_error = False
-        args.parts = ["submissions"]
-        args.problemdir = self.problem_directory
+    def run_random_case(self):
         ProblemAspect.silent = True
 
-        self.run_make("checker")
+        secret_directory = self.problem_data_directory / 'secret'
+        case_seed_file = secret_directory / (self.case + '.seed')
 
-        seed_file = None
-        input_file = None
-        answer_file = None
+        if not case_seed_file.is_file():
+            raise ValueError(f"Could not locate seed file {case_seed_file}")
+
+        # self.run_make("checker")
+
         with Problem(self.problem_directory) as problem:
-            try:
-                problem_data_directory = self.problem_directory / 'data'
-                secret_directory = problem_data_directory / 'secret'
-                case_file = secret_directory / (self.case + '.seed')
+            program = SourceCode(str(self.source_directory.absolute()),
+                                 language=self.language, work_dir=problem.tmpdir)
 
-                if not case_file.is_file():
-                    raise ValueError(f"Could not locate seed file {case_file}")
+            self.logger.info("Compiling program %s", program.name)
+            (compilation_result, error) = program.compile()
+            if not compilation_result:
+                raise ValueError(f"Compile error for program {program.name}: {error}")
 
-                fail_path_wa = self.output_directory / "wa"
-                fail_path_wa.mkdir(parents=True)
-                fail_path_rte = self.output_directory / "rte"
-                fail_path_rte.mkdir(parents=True)
+            # self.run_make("generators")
 
-                lang = languages.load_language_config()
-                language = None
-                if language_key is not None:
-                    language = lang.languages.get(language_key, None)
-                if language is None:
-                    language = lang.detect_language([str(path) for path in self.source_directory.iterdir()])
-                self.logger.info("Detected language %s", language.name)
-                program = SourceCode(path=str(self.source_directory.absolute()),
-                                     language=language, work_dir=problem.tmpdir)
-
-                self.logger.info("Compiling program %s", program.name)
-                (compilation_result, error) = program.compile()
-                if not compilation_result:
-                    raise ValueError(f'Compile error for program {program.name}: {error}')
-
-                self.run_make("generators")
-
-                failed_wa = 0
-                failed_rte = 0
-                runs = 100
-                picker = None
-
-                for i in range(runs):
-                    seed = str(random.getrandbits(63))
-                    seed_file = secret_directory / f"{self.case}_{seed}.seed"
-                    input_file = secret_directory / f"{self.case}_{seed}.in"
-                    answer_file = secret_directory / f"{self.case}_{seed}.ans"
-
-                    self.logger.debug("Randomizing case %s", self.case)
-
-                    self.randomize(case_file, seed_file, Fuzzer.RANDOMIZED_CASES, seed)
-                    self.run_make(input_file)
-                    self.run_make(answer_file)
-
-                    if picker is None:
-                        picker = Picker(input_file)
-
-                    test_data = TestCaseGroup(problem, problem_data_directory)
-
-                    args.data_filter = re_argument(self.case + "_" + seed)
-                    (result1, result2) = self.run_submission(test_data, program, args)
-
-                    verdict = str(result1)[:2]
-                    if verdict == 'WA':
-                        self.logger.debug("found problematic input, picking failing case")
-
-                        feedback_files = Fuzzer.parse_feedback(result1)
-                        failing_case = Picker.first_failing_case(feedback_files["judgemessage.txt"], answer_file)
-                        picked_case = picker.pick_case(input_file, failing_case)
-                        with input_file.open(mode="wt") as f:
-                            for line in picked_case:
-                                f.write(line)
-
-                        self.run_make(answer_file)
-
-                        self.logger.debug("running program again on singular case")
-                        (result1, result2) = self.run_submission(test_data, program, args)
-
-                        failed_wa += 1
-                        run_data_dir = fail_path_wa / f"fail_{failed_wa}"
-                        run_data_dir.mkdir()
-                        self.copy_data(run_data_dir, Path(problem.tmpdir), seed_file, input_file, answer_file,
-                                       feedback_files)
-                        if str(result1)[:2] != 'WA':
-                            self.logger.info("Program has feedback errors between test cases"
-                                             "(or outputs something after the correct answer)")
-                            return
-                    elif verdict == 'TL':
-                        self.logger.info("Program hit time limit")
+            fails = 0
+            test_data = TestCaseGroup(problem, self.problem_data_directory)
+            for i in range(self.run_count):
+                with FuzzingRun(self.time_limit, problem, test_data, program, self.logger,
+                                case_seed_file, secret_directory) as result:
+                    if result.verdict == "AC":
+                        continue
+                    if result.verdict == "INC":
+                        logging.warning("Program has feedback inconsistencies")
                         return
-                    elif verdict == 'JE':
-                        self.logger.info("Judge Error occurred")
-                        return
-                    elif verdict == 'RT':
-                        # binary search for the error
-                        self.logger.debug("Runtime error occurred, binary search for the test case")
+                    fails += 1
+                    run_output_directory = self.output_directory / f"{fails}"
+                    result.copy_data(run_output_directory)
 
-                        first_half = picker.split_case(input_file, True)
-                        second_half = picker.split_case(input_file, False)
+                self.logger.info("Finished %d runs of %d on %s (%d failed)", i + 1, self.run_count, self.case, fails)
 
-                        while first_half[0] != "0\n":
-                            with input_file.open(mode='wt') as f:
-                                f.writelines(first_half)
-                            self.run_make(answer_file)
-
-                            self.logger.debug("running program again on half of remainder")
-                            (result1, result2) = self.run_submission(test_data, program, args)
-                            if str(result1)[:2] == 'RT':
-                                self.logger.debug("RTE occurred in first half")
-                            else:
-                                self.logger.debug("RTE occurred in second half")
-                                with input_file.open(mode='wt') as f:
-                                    f.writelines(second_half)
-
-                            first_half = picker.split_case(input_file, True)
-                            second_half = picker.split_case(input_file, False)
-
-                        self.logger.debug("should have RTE case now")
-                        with input_file.open(mode='wt') as f:
-                            f.writelines(second_half)
-                        self.run_make(answer_file)
-
-                        self.logger.debug("Running program on RTE case")
-                        (result1, result2) = self.run_submission(test_data, program, args)
-
-                        failed_rte += 1
-                        run_data_dir = fail_path_rte / f"fail_{failed_rte}"
-                        run_data_dir.mkdir()
-                        feedback_files = Fuzzer.parse_feedback(result1)
-                        self.copy_data(run_data_dir, Path(problem.tmpdir), seed_file, input_file, answer_file,
-                                       feedback_files)
-                        if str(result1)[:2] == 'RT':
-                            self.logger.debug("RTE binary search successful")
-                        else:
-                            self.logger.info("RTE binary search unsuccessful, program has feedback errors")
-                            return
-
-                    self.logger.info("finished %d runs of %d on %s (%d failed)",
-                                     i + 1, runs, self.case, failed_wa + failed_rte)
-
-                    for file in [input_file, seed_file, answer_file]:
-                        file.unlink(missing_ok=True)
-
-                    if failed_wa + failed_rte >= Fuzzer.MAX_FAILS:
-                        self.logger.info("enough runs failed, ending run")
-                        return
-
-            finally:
-                for file in [input_file, seed_file, answer_file]:
-                    if file is not None:
-                        try:
-                            file.unlink(missing_ok=True)
-                        except IOError:
-                            pass
-                self.run_make("clean")
-
-
-#
-# def single_file(path: Path, submission: Dict[str, Any], logger: logging.Logger):
-#     if not submission["valid"]:
-#         return
-#     if len(submission["sources"]) == 1:
-#         submission["main_file"] = path / next(iter(submission["sources"]))
-#     else:
-#         submission["valid"] = False
-#         logger.error("More than one file.")
-# 
-# 
-# def create_jar(path: Path, submission: Dict[str, Any], logger: logging.Logger):
-#     if not submission["valid"]:
-#         return
-#     if submission["lang"] != "java":
-#         return
-# 
-#     logger.debug("Building executable jar file.")
-# 
-#     build_path = path / "classes"
-#     build_path.mkdir(parents=True)
-#     build_command = ["javac", "-d", build_path]
-#     source_files = [build_path / f for f in submission["sources"].keys()]
-#     build_command.extend(source_files)
-# 
-#     logger.debug("Compiling submission")
-#     p = Popen(build_command, stdout=PIPE, stderr=PIPE)
-#     std_out, std_err = p.communicate()
-#     if p.returncode != 0:
-#         submission["valid"] = False
-#         logger.error("Compile error: %s", std_err.strip())
-#         return
-# 
-#     # Detecting main class
-#     logger.debug("Detecting Main File")
-#     p = Popen(["java", "-jar", "detectmain.jar", build_path], stdout=PIPE, stderr=PIPE)
-#     std_out, std_err = p.communicate()
-#     main_class = std_out
-#     if p.returncode != 0 or main_class == "":
-#         submission["valid"] = False
-#         logger.error("Main File Detection error: %s", std_err.strip())
-#         return
-# 
-#     logger.debug("Detected the main class to be %s", main_class)
-# 
-#     # Building jar file
-#     logger.debug("Packaging jar file")
-#     jar_command = ["jar", "cvfe0", build_path / "main.jar", main_class, "-C", build_path, "."]
-#     p = Popen(jar_command, stdout=PIPE, stderr=PIPE)
-#     std_out, std_err = p.communicate()
-#     if p.returncode != 0:
-#         submission["valid"] = False
-#         logger.error("Packaging error: %s", std_err.strip())
-#         return
-# 
-#     submission["sources"].clear()
-#     submission["sources"]["main.jar"] = ""
+                if fails >= Fuzzer.MAX_FAILS:
+                    self.logger.info("Enough runs failed, ending run")
+                    return
 
 
 class FuzzingThread(threading.Thread):
@@ -405,19 +350,22 @@ class FuzzingThread(threading.Thread):
     FORMATTER = logging.Formatter("%(asctime)s - %(message)s")
 
     @staticmethod
-    def read_results(output_directory, category):
-        category_dir = output_directory / category
-        if not category_dir.exists():
-            return {}
+    def read_results(output_directory):
         result = defaultdict(dict)
-        for case_dir in category_dir.iterdir():
+        for case_dir in output_directory.iterdir():
             if case_dir.is_dir():
-                for case in case_dir.iterdir():
-                    with case.open(mode="rt") as file:
-                        result[case_dir.name][case.name] = file.read()
+                category = None
+                data = {}
+                for file in case_dir.iterdir():
+                    if file.name == "verdict":
+                        category = file.read_text("utf-8")
+                    else:
+                        data[file.name] = file.read_text("utf-8")
+                if category is not None:
+                    result[category][case_dir.name] = data
         return result
 
-    def __init__(self, fuzzer_id, logger: logging.Logger, submission, cases, problem_repository, time_limit=TIMEOUT):
+    def __init__(self, fuzzer_id, logger: logging.Logger, submission, problem_repository, time_limit=TIMEOUT):
         threading.Thread.__init__(self)
 
         self.fuzzer_id = fuzzer_id
@@ -425,7 +373,6 @@ class FuzzingThread(threading.Thread):
         self.submission = submission
         self.submission["valid"] = True
         self.state = {'id': self.fuzzer_id, 'finished': False}
-        self.cases = cases
         self.time_limit = time_limit
         self.log_stream = StringIO()
         self.problem_repository = problem_repository
@@ -450,20 +397,28 @@ class FuzzingThread(threading.Thread):
                     source.write(source_code)
 
             try:
-                self.logger.debug('%s: Starting fuzzing', self.fuzzer_id)
+                self.logger.debug("%s: Starting fuzzing", self.fuzzer_id)
                 problem_directory = self.problem_repository / self.submission["problem"]
-                Fuzzer(self.submission["secret_file"], source_directory, problem_directory, output_directory,
-                       submission_logger, self.time_limit).run_random_case(self.submission.get("lang", None))
-                self.logger.debug('%s: Fuzzing finished.', self.fuzzer_id)
+
+                lang = languages.load_language_config()
+                language = lang.languages.get(self.submission.get("lang"), None)
+                if language is None:
+                    language = lang.detect_language([str(path) for path in source_directory.iterdir()])
+                self.logger.info("Using language %s", language.name)
+
+                Fuzzer(self.submission["secret_file"], source_directory, language, problem_directory, output_directory,
+                       self.submission.get("runs", 100), submission_logger, self.time_limit).run_random_case()
+                self.logger.debug("%s: Fuzzing finished.", self.fuzzer_id)
 
                 # Find failing cases
-                self.state['cases'] = {
-                    "wa": FuzzingThread.read_results(output_directory, "wa"),
-                    "rte": FuzzingThread.read_results(output_directory, "rte")
-                }
+                self.state['cases'] = FuzzingThread.read_results(output_directory)
+            except MakeError as e:
+                self.logger.error("%s: Make rule %s failed with output:\n%s\n===\n%s\n",
+                                  self.fuzzer_id, e.rule, e.out, e.err)
+                submission_logger.error("Make failed")
             except Exception as e:
-                self.logger.warning("%s: Error during fuzzing.", self.fuzzer_id, exc_info=e)
-                submission_logger.info("Error during fuzzing.")
+                self.logger.warning("%s: Error during fuzzing", exc_info=e)
+                submission_logger.error("Generic error during fuzzing")
 
             self.state['log'] = self.log_stream.getvalue()
             submission_log_handler.flush()

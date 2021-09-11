@@ -71,16 +71,24 @@ const change_listener = function (event) {
 
     const python_regex = [/sys\.stdin/, /\sprint\(/, /for\s+\S+\s+in\s+/];
     for (let regex of python_regex) {
-        const pythonname = source.match(regex);
-        if (pythonname) {
+        if (source.match(regex)) {
             console.log("Guessing source to be python, since it matches " + regex.toString());
             $("#source_lang").val("python").change();
             return;
         }
     }
 
-    console.log("Guessing source be c++")
-    $("#source_lang").val("cpp").change();
+    const cpp_regex = [/#include/, /scanf/];
+    for (let regex of cpp_regex) {
+        if (source.match(regex)) {
+            console.log("Guessing source to be cpp, since it matches " + regex.toString());
+            $("#source_lang").val("cpp").change();
+            return;
+        }
+    }
+
+    console.log("No source guess")
+    $("#source_lang").val("unknown").change();
 };
 
 const submit_listener = function (event) {
@@ -106,8 +114,7 @@ const submit_listener = function (event) {
         lang = "cpp";
         source_name = "a.cpp";
     } else {
-        warn("Source language unknown!");
-        return;
+        lang = null;
     }
 
     // Problem
@@ -124,6 +131,7 @@ const submit_listener = function (event) {
     }
 
     const time_limit = parseInt($('#time_limit').val());
+    const runs = parseInt($('#runs').val());
 
     // Button state
     const l = Ladda.create(document.querySelector('#submitter'));
@@ -138,7 +146,8 @@ const submit_listener = function (event) {
         "lang": lang,
         "sources": source,
         "secret_file": secret_name,
-        "time_limit": time_limit
+        "time_limit": time_limit,
+        "runs": runs
     };
 
     console.log("Starting fuzzing " + JSON.stringify(request, null, 2));
@@ -237,9 +246,35 @@ $("#source_lang").change(function (event) {
     }
 });
 
+$("#problem_name").change(function (event) {
+    const problem_name = $("#problem_name").val()
+    const secret_name = $("#secret_name")
+
+    secret_name.prop("disabled", true);
+    secret_name.typeahead('destroy')
+    if (problem_name !== null) {
+        $.get("/problem/" + problem_name + "/seeds", function (data) {
+            console.log(data)
+            if (data.success) {
+                secret_name.prop("disabled", false);
+                secret_name.typeahead({source: data.seeds});
+                for (const seed of data.seeds) {
+                    if (seed.startsWith("small")) {
+                        secret_name.val(seed).change();
+                        return
+                    }
+                }
+                if (data.seeds.length) {
+                    secret_name.val(data.seeds[0]).change();
+                }
+            }
+        })
+    }
+})
+
 // Populate typeahead
 $.get('/problems', function (data) {
-    console.log(data);
-    $("#problem_name").typeahead({source: data.problems});
-    $("#problem_name").prop("disabled", false);
+    let problem_name = $("#problem_name")
+    problem_name.typeahead({source: data.problems});
+    problem_name.prop("disabled", false);
 }, 'json');

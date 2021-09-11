@@ -33,67 +33,132 @@
     <div class="alerts">
     </div>
 </div>
+
 <div class="container col-md-6">
     <h2>Input</h2>
     <form id="target">
-        <div class="panel">
-            <label for="problem_name">Problem Name</label><br/>
-            <input type="text" size=60 id="problem_name" data-provide="typeahead" autocomplete="off"
-                   disabled="disabled"/><br/>
+        <div class="row">
+            <div class="col-md-12">
+                <div class="panel">
+                    <div class="panel-body">
+                        <label for="problem_name">Problem Name</label><br/>
+                        <input type="text" size=60 id="problem_name" data-provide="typeahead" autocomplete="off"
+                               disabled="disabled"/><br/>
+
+                        <label for="secret_name">Secret Name</label><br/>
+                        <input type="text" size=60 id="secret_name" data-provide="typeahead" autocomplete="off"
+                               disabled="disabled"/><br/>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="panel">
-            <label for="source_lang">Language</label><br/>
-            <select id="source_lang" class="selectpicker">
-                <option value="unkown">Unknown</option>
-                <option value="java">Java</option>
-                <option value="cpp">C++</option>
-                <option value="python">Python</option>
-            </select>
-
-            <label for="java_name">Java Name</label>
-            <input type="text" size=20 id="java_name" enabled="false" placeholder="Java Class Name"/><br/>
+        <div class="row">
+            <div class="col-md-12">
+                <div class="panel">
+                    <div class="panel-body" style="display:flex; flex-direction: row; justify-content: flex-start;
+                     align-items: center; gap: 5px">
+                        <div>
+                            <label for="source_lang">Language</label><br/>
+                            <select id="source_lang" class="selectpicker">
+                                <option value="unknown">Unknown</option>
+                                <option value="java">Java</option>
+                                <option value="cpp">C++</option>
+                                <option value="python">Python</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="java_name">Java Name</label><br/>
+                            <input type="text" size=20 id="java_name" enabled="false"
+                                   placeholder="Java Class Name"/><br/>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="panel">
-            <label for="secret_name">Secret Name</label><br/>
-            <input type="text" size=60 id="secret_name" placeholder="small1"/><br/>
+        <div class="row">
+            <div class="col-md-12">
+                <div class="panel">
+                    <div class="panel-body" style="display:flex; flex-direction: row; justify-content: flex-start;
+                     align-items: center; gap: 5px">
+                        <div>
+                            <label for="time_limit">Time Limit</label><br/>
+                            <input type="number" size=10 id="time_limit" min="1" max="100" value="2"/>
+                        </div>
+                        <span></span>
+                        <div>
+                            <label for="runs">Runs</label><br/>
+                            <input type="number" size=10 id="runs" min="1" max="500" value="100"/>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="panel">
-            <label for="time_limit">Time Limit</label><br/>
-            <input type="number" size=10 id="time_limit" min="1" max="100" value="2"/><br/>
+        <div class="row">
+            <div class="col-md-12">
+                <div class="panel">
+                    <div class="panel-body">
+
+                        <label for="source">Source Code</label><br/>
+                        <textarea rows=10, cols=80 id="source"></textarea><br/>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-12">
+                <div class="panel">
+                    <div class="panel-body">
+                        <button class="btn btn-lg btn-primary ladda-button" data-style="slide-right" id="submitter">
+                            <span class="ladda-label">Send request</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="panel">
-            <label for="source">Source Code</label><br/>
-            <textarea rows=15, cols=80 id="source"></textarea><br/>
-        </div>
-
-        <button class="btn btn-lg btn-primary ladda-button" data-style="slide-right" id="submitter">
-            <span class="ladda-label">Send request</span>
-        </button>
     </form>
 </div>
 
 <div class="container col-md-6">
     <h2>Output</h2>
-    <div class="panel">
-        <label for="uuid">Fuzzing Id</label><br/>
-        <input type="text" readonly="true" size=60 id="uuid"/><br/>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel">
+                <div class="panel-body">
+                    <label for="uuid">Fuzzing Id</label><br/>
+                    <input type="text" readonly="readonly" size=60 id="uuid"/><br/>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="panel">
-        <label for="log">Log</label><br/>
-        <textarea rows=10, cols=80 readonly="true" wrap="off" id="log"></textarea>
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel">
+                <div class="panel-body">
+                    <label for="log">Log</label><br/>
+                    <textarea rows=10, cols=80 readonly="readonly" wrap="soft" id="log"></textarea>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="panel">
-        <label for="cases">Failing Cases</label><br/>
-        <ul class="nav nav-tabs" id="casetabs">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel">
+                <div class="panel-body">
+                    <label for="cases">Failing Cases</label><br/>
+                    <ul class="nav nav-tabs" id="casetabs">
 
-        </ul>
-        <div class="tab-content" id="casetabcontents">
+                    </ul>
+                    <div class="tab-content" id="casetabcontents">
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
