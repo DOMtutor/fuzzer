@@ -184,7 +184,7 @@ const submit_problem = function () {
                     toggle_button(true);
                 }
             },
-            error: function (response) {
+            error: function (_) {
                 warn("Error in update request.");
                 toggle_button(true);
             }
@@ -285,7 +285,7 @@ $(document).ready(function () {
     problem_change();
 
 
-    $("#source_lang").change(function (event) {
+    $("#source_lang").change(function (_) {
         const java_name = $("#java_name");
         if ($("#source_lang").val() === "java") {
             java_name.prop("disabled", false);
