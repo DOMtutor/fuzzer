@@ -51,7 +51,7 @@ def get_problem_seeds(problem_name):
     secret_path = problem_repository / problem_name / "data" / "secret"
     if not secret_path.is_dir():
         return jsonify(success=False, errors=["No such problem"])
-    seeds = [seed.name[:-5] for seed in secret_path.glob("*.seed") if not seed.name.startswith("fuzzing_")]
+    seeds = [seed.name[:-5] for seed in secret_path.glob("*.seed")]
     return jsonify(success=True, seeds=seeds)
 
 
@@ -104,7 +104,7 @@ if __name__ == '__main__':
     # logging.basicConfig(level=logging.CRITICAL, format=LOGGING_FORMAT)
     logging.basicConfig(level=logging.DEBUG, format=LOGGING_FORMAT)
 
-    logging.getLogger().setLevel(logging.WARNING)
+    logging.getLogger().setLevel(logging.DEBUG)
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
     logging.getLogger("submission").setLevel(logging.DEBUG)
 
@@ -113,7 +113,7 @@ if __name__ == '__main__':
     for path in problem_repository.glob("*/problem.yaml"):
         problem = path.parent
         secret_dir = problem / "data" / "secret"
-        if any(not secret.name.startswith("fuzzing_") for secret in secret_dir.glob("*.seed")):
+        if any(True for secret in secret_dir.glob("*.seed")):
             problems.append(problem.name)
 
     logging.getLogger().info("Found %d problems with seeds", len(problems))
