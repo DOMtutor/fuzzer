@@ -100,8 +100,6 @@ if __name__ == '__main__':
     # Root logger
     LOGGING_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
-    # Problem tools use root logger -.- use this line to silence them
-    # logging.basicConfig(level=logging.CRITICAL, format=LOGGING_FORMAT)
     logging.basicConfig(level=logging.DEBUG, format=LOGGING_FORMAT)
 
     logging.getLogger().setLevel(logging.DEBUG)

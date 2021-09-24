@@ -21,6 +21,8 @@ from problemtools.verifyproblem import ProblemAspect, Problem, TestCaseGroup, re
 
 logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
+
 
 class MakeError(Exception):
     def __init__(self, rule, out, err):
@@ -380,7 +382,8 @@ class FuzzingThread(threading.Thread):
                     result[f"{category}_{case_dir.name}"] = data
         return result
 
-    def __init__(self, fuzzer_id, submission_logger: logging.Logger, submission, problem_repository, time_limit=TIMEOUT):
+    def __init__(self, fuzzer_id, submission_logger: logging.Logger, submission, problem_repository,
+                 time_limit=TIMEOUT):
         threading.Thread.__init__(self)
 
         self.fuzzer_id = fuzzer_id

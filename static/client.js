@@ -5,6 +5,13 @@ const warn = function (message) {
 };
 
 const display = function (cases) {
+    const cases_tabs = $("#cases_tabs");
+    const content = $("#cases_tab_contents");
+    cases_tabs.empty();
+    content.empty();
+    if (cases === null) {
+        return;
+    }
     const keys = Object.keys(cases);
 
     let tabs_fragment = document.createDocumentFragment();
@@ -109,12 +116,7 @@ const display = function (cases) {
         content_fragment.append(content);
     }
 
-    const cases_tabs = $("#cases_tabs");
-    cases_tabs.empty();
     cases_tabs.append(tabs_fragment);
-
-    const content = $("#cases_tab_contents");
-    content.empty();
     content.append(content_fragment);
 };
 
@@ -216,7 +218,6 @@ const submit_problem = function () {
 
     const log = $("#log");
 
-    // Periodical update function - uses the submission uuid
     let update_fun = function () {
         $.ajax({
             type: 'GET',
@@ -225,15 +226,12 @@ const submit_problem = function () {
                 console.log("Got update" + JSON.stringify(response, null, 2));
 
                 if (response.success) {
+                    log.val(response.state.log);
                     if (response.state.finished) {
-                        log.val(response.state.log);
-
-                        if ("cases" in response.state) {
-                            display(response.state.cases);
-                        }
+                        display(response.state.cases);
                         toggle_button(true);
                     } else {
-                        setTimeout(update_fun, 500);
+                        setTimeout(update_fun, 1000);
                     }
                     // Scroll the textarea all the way down
                     log.scrollTop(log[0].scrollHeight);
