@@ -13,7 +13,7 @@ from io import StringIO
 from pathlib import Path
 from typing import *
 
-sys.path.append("kattis")
+sys.path.append("problems/kattis")
 
 from problemtools import languages, verifyproblem
 from problemtools.run import SourceCode, Program

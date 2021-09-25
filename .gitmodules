@@ -1,3 +1,0 @@
-[submodule "kattis"]
-	path = kattis
-	url = git@git.ist.ac.at:domjudge/problemtools.git
