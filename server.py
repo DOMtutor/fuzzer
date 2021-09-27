@@ -12,7 +12,7 @@ from fuzzer import FuzzingThread
 
 sys.path.append("problems/scripts")
 
-from structure import ProblemRepository, Problem
+from repository import Problem, ProblemRepository
 
 schema = {
     "type": 'object',

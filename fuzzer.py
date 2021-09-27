@@ -13,9 +13,12 @@ from io import StringIO
 from pathlib import Path
 from typing import *
 
+import base_model
+import judge_model
+
 sys.path.extend(["problems/kattis", "problems/scripts"])
 
-from structure import ProblemRepository, Problem
+from repository import Problem, ProblemRepository
 
 from problemtools import languages, verifyproblem
 from problemtools.run import SourceCode, Program
@@ -305,7 +308,7 @@ class FuzzingRun(object):
 class Fuzzer(object):
     MAX_FAILS = 3
 
-    def __init__(self, case: str, source_directory: pathlib.Path, language: languages.Language,
+    def __init__(self, case: str, source_directory: pathlib.Path, language: judge_model.Language,
                  problem: Problem, output_directory: pathlib.Path, run_count: int,
                  submission_logger: logging.Logger, time_limit):
         self.case = case
