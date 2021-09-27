@@ -13,13 +13,14 @@ from io import StringIO
 from pathlib import Path
 from typing import *
 
-sys.path.append("problems/kattis")
+sys.path.extend(["problems/kattis", "problems/scripts"])
+
+from structure import ProblemRepository, Problem
 
 from problemtools import languages, verifyproblem
 from problemtools.run import SourceCode, Program
-from problemtools.verifyproblem import ProblemAspect, Problem, TestCaseGroup, re_argument, SubmissionResult, TestCase
-
-logger = logging.getLogger(__name__)
+from problemtools.verifyproblem import ProblemAspect, Problem as KattisProblem, \
+    TestCaseGroup, re_argument, SubmissionResult, TestCase
 
 logger = logging.getLogger(__name__)
 
@@ -181,10 +182,10 @@ class FuzzingRun(object):
                             f_r.write(line)
                         written += 1
 
-    def __init__(self, time_limit: float, problem: Problem, program: Program,
+    def __init__(self, time_limit: float, problem: KattisProblem, program: Program,
                  submission_logger: logging.Logger, case_seed_file, fuzzing_directory):
         self.time_limit = time_limit
-        self.problem = problem
+        self.problem: KattisProblem = problem
         self.program = program
         self.submission_logger = submission_logger
 
@@ -195,7 +196,7 @@ class FuzzingRun(object):
         self.seed_file: Path = fuzzing_directory / f"fuzzing_{self.seed}.seed"
         self.input_file: Path = fuzzing_directory / f"fuzzing_{self.seed}.in"
         self.answer_file: Path = fuzzing_directory / f"fuzzing_{self.seed}.ans"
-        self.problem_directory: Path = Path(problem.probdir).absolute()
+        self.problem_directory: Path = pathlib.Path(problem.probdir)
 
         self.args = verifyproblem.default_args()
         self.args.bail_on_error = False
@@ -305,18 +306,18 @@ class Fuzzer(object):
     MAX_FAILS = 3
 
     def __init__(self, case: str, source_directory: pathlib.Path, language: languages.Language,
-                 problem_directory: pathlib.Path, output_directory: pathlib.Path, run_count: int,
+                 problem: Problem, output_directory: pathlib.Path, run_count: int,
                  submission_logger: logging.Logger, time_limit):
         self.case = case
+        self.problem = problem
         self.source_directory = source_directory.resolve().absolute()
-        self.problem_directory = problem_directory.resolve().absolute()
         self.output_directory = output_directory.resolve().absolute()
         self.submission_logger = submission_logger
         self.time_limit = time_limit
         self.language = language
         self.run_count = run_count
 
-        self.problem_data_directory = self.problem_directory / 'data'
+        self.problem_data_directory = self.problem.directory / 'data'
 
     def run_random_case(self):
         ProblemAspect.silent = True
@@ -330,7 +331,7 @@ class Fuzzer(object):
 
         # self.run_make("checker")
 
-        with Problem(self.problem_directory) as problem:
+        with KattisProblem(self.problem.directory) as problem:
             program = SourceCode(str(self.source_directory.absolute()),
                                  language=self.language, work_dir=problem.tmpdir)
 
@@ -393,7 +394,7 @@ class FuzzingThread(threading.Thread):
         self.state = {'id': self.fuzzer_id, 'finished': False}
         self.time_limit = time_limit
         self.log_stream = StringIO()
-        self.problem_repository = problem_repository
+        self.problem_repository: ProblemRepository = problem_repository
 
     def run(self):
         submission_logger = logging.getLogger(f"submission.{self.fuzzer_id}")
@@ -416,7 +417,7 @@ class FuzzingThread(threading.Thread):
 
             try:
                 self.submission_logger.debug("%s: Starting fuzzing", self.fuzzer_id)
-                problem_directory = self.problem_repository / self.submission["problem"]
+                problem: Problem = self.problem_repository.load_problems(self.submission["problem"])
 
                 lang = languages.load_language_config()
                 language = lang.languages.get(self.submission.get("lang"), None)
@@ -424,7 +425,7 @@ class FuzzingThread(threading.Thread):
                     language = lang.detect_language([str(path) for path in source_directory.iterdir()])
                 self.submission_logger.info("Using language %s", language.name)
 
-                Fuzzer(self.submission["secret_file"], source_directory, language, problem_directory, output_directory,
+                Fuzzer(self.submission["secret_file"], source_directory, language, problem, output_directory,
                        self.submission.get("runs", 10), submission_logger, self.time_limit).run_random_case()
                 self.submission_logger.debug("%s: Fuzzing finished.", self.fuzzer_id)
 

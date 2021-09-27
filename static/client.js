@@ -179,9 +179,12 @@ const submit_problem = function () {
     const source_lang = $('#source_lang').val();
     let lang;
     let source_name;
-    if (source_lang === "python") {
-        lang = "python";
-        source_name = "main.py";
+    if (source_lang === "cpp") {
+        lang = "cpp";
+        source_name = "a.cpp";
+    } else if (source_lang === "haskell") {
+        lang = "haskell";
+        source_name = "main.hs"
     } else if (source_lang === "java") {
         const classname = $("#java_name").val();
         if (!classname) {
@@ -191,11 +194,24 @@ const submit_problem = function () {
 
         lang = "java";
         source_name = classname + ".java";
-    } else if (source_lang === "cpp") {
-        lang = "cpp";
-        source_name = "a.cpp";
+    } else if (source_lang === "javascript") {
+        lang = "javascript";
+        source_name = "main.js";
+    } else if (source_lang === "julia") {
+        lang = "julia";
+        source_name = "main.jl";
+    } else if (source_lang === "pascal") {
+        lang = "pascal"
+        source_name = "main.pas";
+    } else if (source_lang === "python") {
+        lang = "python";
+        source_name = "main.py";
+    } else if (source_lang === "rust") {
+        lang = "rust";
+        source_name = "main.rs";
     } else {
         lang = null;
+        source_name = "main";
     }
 
     const time_limit = parseInt($('#time_limit').val());

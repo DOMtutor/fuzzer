@@ -1,6 +1,8 @@
 import logging
 import uuid
+import sys
 from pathlib import Path
+from typing import List
 
 from flask import Flask, jsonify, request, url_for, redirect
 from flask_inputs import Inputs
@@ -8,11 +10,15 @@ from flask_inputs.validators import JsonSchema
 
 from fuzzer import FuzzingThread
 
+sys.path.append("problems/scripts")
+
+from structure import ProblemRepository, Problem
+
 schema = {
     "type": 'object',
     "properties": {
         "problem": {"type": "string", "minLength": 3},
-        "lang": {"enum": ["java", "cpp", "python"]},
+        "lang": {"enum": ["cpp", "haskell", "java", "javascript", "julia", "pascal", "python", "rust"]},
         "sources": {
             "type": "object",
             "minProperties": 1,
@@ -20,10 +26,11 @@ schema = {
                 "^.*$": {"type": "string", "minLength": 3}
             }
         },
+        "secret_file": {"type": "string"},
         "time_limit": {"type": "integer", "minimum": 0},
         "runs": {"type": "integer", "minimum": 0}
     },
-    "required": ["problem", "lang", "sources", "time_limit"]
+    "required": ["problem", "lang", "sources", "time_limit", "secret_file"]
 }
 
 
@@ -43,12 +50,12 @@ def home():
 
 @app.route('/problems')
 def show_problems():
-    return jsonify(success=True, problems=problems)
+    return jsonify(success=True, problems=[problem.label for problem in problems])
 
 
 @app.route('/problem/<problem_name>/seeds', methods=['GET'])
 def get_problem_seeds(problem_name):
-    secret_path = problem_repository / problem_name / "data" / "secret"
+    secret_path = problem_repository.load_problems(problem_name).directory / "data" / "secret"
     if not secret_path.is_dir():
         return jsonify(success=False, errors=["No such problem"])
     seeds = [seed.name[:-5] for seed in secret_path.glob("*.seed")]
@@ -106,13 +113,12 @@ if __name__ == '__main__':
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
     logging.getLogger("submission").setLevel(logging.DEBUG)
 
-    problem_repository = Path("problems")
-    problems = []
-    for path in problem_repository.glob("*/problem.yaml"):
-        problem = path.parent
-        secret_dir = problem / "data" / "secret"
+    problem_repository = ProblemRepository()
+    problems: List[Problem] = []
+    for problem in problem_repository:
+        secret_dir = problem.directory / "data" / "secret"
         if any(True for secret in secret_dir.glob("*.seed")):
-            problems.append(problem.name)
+            problems.append(problem)
 
     logging.getLogger().info("Found %d problems with seeds", len(problems))
     app.run()
