@@ -12,7 +12,7 @@ from fuzzer import FuzzingThread
 
 sys.path.append("problems/scripts")
 
-from repository import Problem, ProblemRepository
+from repository import RepositoryProblem, ProblemRepository
 
 schema = {
     "type": 'object',
@@ -50,12 +50,12 @@ def home():
 
 @app.route('/problems')
 def show_problems():
-    return jsonify(success=True, problems=[problem.label for problem in problems])
+    return jsonify(success=True, problems=[problem.repository_key for problem in problems])
 
 
 @app.route('/problem/<problem_name>/seeds', methods=['GET'])
 def get_problem_seeds(problem_name):
-    secret_path = problem_repository.load_problems(problem_name).directory / "data" / "secret"
+    secret_path = problem_repository.load_problem(problem_name).directory / "data" / "secret"
     if not secret_path.is_dir():
         return jsonify(success=False, errors=["No such problem"])
     seeds = [seed.name[:-5] for seed in secret_path.glob("*.seed")]
@@ -114,7 +114,7 @@ if __name__ == '__main__':
     logging.getLogger("submission").setLevel(logging.DEBUG)
 
     problem_repository = ProblemRepository()
-    problems: List[Problem] = []
+    problems: List[RepositoryProblem] = []
     for problem in problem_repository:
         secret_dir = problem.directory / "data" / "secret"
         if any(True for secret in secret_dir.glob("*.seed")):
