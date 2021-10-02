@@ -12,4 +12,4 @@
 * `python3 -m venv venv`
 * `. ./venv/bin/activate`
 * `pip install -r requirements`
-* Add link to problem repository `ln -s <path> problems`
+* Add link to problem repository `ln -s <path> repository`

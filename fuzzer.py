@@ -13,12 +13,10 @@ from io import StringIO
 from pathlib import Path
 from typing import *
 
-import base_model
-import model
+sys.path.extend(["repository/kattis", "repository/scripts"])
 
-sys.path.extend(["problems/kattis", "problems/scripts"])
-
-from repository import RepositoryProblem, ProblemRepository
+import model.model as model
+from repository.repository import RepositoryProblem, ProblemRepository
 
 from problemtools import languages, verifyproblem
 from problemtools.run import SourceCode, Program
