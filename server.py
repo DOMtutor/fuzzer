@@ -11,7 +11,7 @@ from fuzzer import FuzzingThread
 
 sys.path.append("repository/scripts")
 
-from repository import RepositoryProblem, RepositoryProblems, Repository
+from repository import RepositoryProblem, Repository
 
 schema = {
     "type": 'object',
@@ -49,7 +49,7 @@ def home():
 
 @app.route('/problems')
 def show_problems():
-    return jsonify(success=True, problems=[problem.repository_key for problem in problems])
+    return jsonify(success=True, problems=[p.repository_key for p in problems])
 
 
 @app.route('/problem/<problem_name>/seeds', methods=['GET'])
