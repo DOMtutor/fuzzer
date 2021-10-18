@@ -1,4 +1,3 @@
-import sys
 import logging
 import os
 import pathlib
@@ -6,6 +5,7 @@ import random
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 from collections import defaultdict
@@ -13,17 +13,15 @@ from io import StringIO
 from pathlib import Path
 from typing import *
 
-import base_model
-import model
+sys.path.extend(["repository/kattis", "repository/scripts", "repository/scripts/interaction"])
 
-sys.path.extend(["problems/kattis", "problems/scripts"])
-
-from repository import RepositoryProblem, ProblemRepository
+from repository import RepositoryProblem, Repository
+from judge.model import Language
 
 from problemtools import languages, verifyproblem
 from problemtools.run import SourceCode, Program
 from problemtools.verifyproblem import ProblemAspect, Problem as KattisProblem, \
-    TestCaseGroup, re_argument, SubmissionResult, TestCase
+    TestCaseGroup, re_argument, SubmissionResult
 
 logger = logging.getLogger(__name__)
 
@@ -308,7 +306,7 @@ class FuzzingRun(object):
 class Fuzzer(object):
     MAX_FAILS = 3
 
-    def __init__(self, case: str, source_directory: pathlib.Path, language: model.Language,
+    def __init__(self, case: str, source_directory: pathlib.Path, language: Language,
                  problem: RepositoryProblem, output_directory: pathlib.Path, run_count: int,
                  submission_logger: logging.Logger, time_limit):
         self.case = case
@@ -368,7 +366,7 @@ class Fuzzer(object):
 
 class FuzzingThread(threading.Thread):
     TIMEOUT = 5
-    FORMATTER = logging.Formatter("%(asctime)s - %(message)s")
+    FORMATTER = logging.Formatter("%(message)s")
 
     @staticmethod
     def read_results(output_directory):
@@ -386,7 +384,7 @@ class FuzzingThread(threading.Thread):
                     result[f"{category}_{case_dir.name}"] = data
         return result
 
-    def __init__(self, fuzzer_id, submission_logger: logging.Logger, submission, problem_repository,
+    def __init__(self, fuzzer_id, submission_logger: logging.Logger, submission, repository: Repository,
                  time_limit=TIMEOUT):
         threading.Thread.__init__(self)
 
@@ -397,7 +395,7 @@ class FuzzingThread(threading.Thread):
         self.state = {'id': self.fuzzer_id, 'finished': False}
         self.time_limit = time_limit
         self.log_stream = StringIO()
-        self.problem_repository: ProblemRepository = problem_repository
+        self.repository: Repository = repository
 
     def run(self):
         submission_logger = logging.getLogger(f"submission.{self.fuzzer_id}")
@@ -420,7 +418,7 @@ class FuzzingThread(threading.Thread):
 
             try:
                 self.submission_logger.debug("%s: Starting fuzzing", self.fuzzer_id)
-                problem: RepositoryProblem = self.problem_repository.load_problem(self.submission["problem"])
+                problem: RepositoryProblem = self.repository.problems.load_problem(self.submission["problem"])
 
                 lang = languages.load_language_config()
                 language = lang.languages.get(self.submission.get("lang"), None)

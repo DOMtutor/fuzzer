@@ -1,7 +1,6 @@
 import logging
-import uuid
 import sys
-from pathlib import Path
+import uuid
 from typing import List
 
 from flask import Flask, jsonify, request, url_for, redirect
@@ -10,9 +9,9 @@ from flask_inputs.validators import JsonSchema
 
 from fuzzer import FuzzingThread
 
-sys.path.append("problems/scripts")
+sys.path.append("repository/scripts")
 
-from repository import RepositoryProblem, ProblemRepository
+from repository import RepositoryProblem, RepositoryProblems, Repository
 
 schema = {
     "type": 'object',
@@ -55,7 +54,7 @@ def show_problems():
 
 @app.route('/problem/<problem_name>/seeds', methods=['GET'])
 def get_problem_seeds(problem_name):
-    secret_path = problem_repository.load_problem(problem_name).directory / "data" / "secret"
+    secret_path = repository.problems.load_problem(problem_name).directory / "data" / "secret"
     if not secret_path.is_dir():
         return jsonify(success=False, errors=["No such problem"])
     seeds = [seed.name[:-5] for seed in secret_path.glob("*.seed")]
@@ -77,7 +76,7 @@ def start_fuzzing():
 
     data = request.get_json()
     fuzzing_id = str(uuid.uuid4())
-    state[fuzzing_id] = FuzzingThread(fuzzing_id, app.logger, data, problem_repository)
+    state[fuzzing_id] = FuzzingThread(fuzzing_id, app.logger, data, repository)
     state[fuzzing_id].start()
 
     return jsonify(success=True, id=fuzzing_id)
@@ -113,9 +112,9 @@ if __name__ == '__main__':
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
     logging.getLogger("submission").setLevel(logging.DEBUG)
 
-    problem_repository = ProblemRepository()
+    repository = Repository()
     problems: List[RepositoryProblem] = []
-    for problem in problem_repository:
+    for problem in repository.problems:
         secret_dir = problem.directory / "data" / "secret"
         if any(True for secret in secret_dir.glob("*.seed")):
             problems.append(problem)
