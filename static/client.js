@@ -223,9 +223,9 @@ const submit_problem = function () {
 
     const request = {
         "problem": problem,
-        "lang": lang,
+        "language": lang,
         "sources": source,
-        "secret_file": secret_name,
+        "case_name": secret_name,
         "time_limit": time_limit,
         "runs": runs
     };
