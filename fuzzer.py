@@ -5,7 +5,6 @@ import random
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import threading
 from collections import defaultdict
@@ -13,10 +12,9 @@ from io import StringIO
 from pathlib import Path
 from typing import *
 
-sys.path.extend(["repository/kattis", "repository/scripts", "repository/scripts/interaction"])
+from pyjudge.model import Language
 
 from repository import RepositoryProblem, Repository
-from judge.model import Language
 
 from problemtools import languages, verifyproblem
 from problemtools.run import SourceCode, Program
@@ -147,7 +145,6 @@ class RunResult(object):
         for name, content in self.feedback.items():
             with (output_dir / name).open(mode="wt") as f:
                 f.writelines(content)
-
 
 
 class FuzzingRun(object):

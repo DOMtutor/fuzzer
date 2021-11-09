@@ -1,17 +1,13 @@
 import logging
+import pathlib
 import sys
 import uuid
+import argparse
 from typing import List
 
 from flask import Flask, jsonify, request, url_for, redirect
 from flask_inputs import Inputs
 from flask_inputs.validators import JsonSchema
-
-from fuzzer import FuzzingThread
-
-sys.path.append("repository/scripts")
-
-from repository import RepositoryProblem, Repository
 
 schema = {
     "type": 'object',
@@ -69,6 +65,8 @@ def show_status():
 
 @app.route('/submission', methods=['POST'])
 def start_fuzzing():
+    from fuzzer import FuzzingThread
+
     inputs = JsonInputs(request)
     if not inputs.validate():
         app.logger.debug("Invalid JSON request: %s", request)
@@ -103,6 +101,19 @@ def stop_fuzzing(fuzzing_id):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-r", "--repository", help="Path to repository", type=pathlib.Path, required=True)
+    arguments = parser.parse_args()
+
+    repository_path: pathlib.Path = arguments.repository
+
+    if not repository_path.is_dir():
+        sys.exit(f"Path {repository_path} is not a path")
+
+    sys.path.append(str(repository_path / "scripts"))
+
+    from repository import RepositoryProblem, Repository
+
     # Root logger
     LOGGING_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
@@ -118,6 +129,9 @@ if __name__ == '__main__':
         secret_dir = problem.directory / "data" / "secret"
         if any(True for secret in secret_dir.glob("*.seed")):
             problems.append(problem)
+
+    if not problems:
+        sys.exit("Found no valid problems!")
 
     logging.getLogger().info("Found %d problems with seeds", len(problems))
     app.run()
