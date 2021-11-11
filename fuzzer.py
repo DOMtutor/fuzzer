@@ -1,13 +1,13 @@
 import dataclasses
 import enum
 import logging
-import os
 import pathlib
 import random
 import re
 import shutil
 import subprocess
 import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import *
@@ -15,7 +15,6 @@ from typing import *
 from problemtools import languages, verifyproblem
 from problemtools.run import SourceCode, Program
 from problemtools.verifyproblem import Problem as KattisProblem, TestCaseGroup, re_argument, SubmissionResult
-from pyjudge.model import Verdict
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +126,7 @@ class RunVerdict(enum.Enum):
     def get(key):
         for verdict in RunVerdict:
             if verdict.value == key:
-                return key
+                return verdict
         raise KeyError(key)
 
     def __str__(self):
@@ -152,6 +151,16 @@ class RunResult(object):
             self.answer = f.read()
 
 
+def run_make(base_path: Path, rule: Union[str, Path]):
+    if isinstance(rule, Path):
+        rule = rule.relative_to(base_path)
+    process = subprocess.Popen(["make", rule], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               encoding="utf-8", cwd=str(base_path))
+    out, err = process.communicate(timeout=30)
+    if process.returncode != 0:
+        raise MakeError(rule, out, err)
+
+
 class FuzzingRun(object):
     RANDOM_RUNS = 200
 
@@ -174,19 +183,29 @@ class FuzzingRun(object):
     def randomize(original: Path, randomized: Path, cases: int, seed: str):
         with original.open(mode="rt") as f_o:
             with randomized.open(mode="wt") as f_r:
-                written = 0
+                written_ints = 0
                 for line in f_o.readlines():
-                    if not line.startswith('#'):
-                        if written == 0:
+                    comment_index = line.find('#')
+                    if comment_index >= 0:
+                        line = line[:comment_index]
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.isnumeric():
+                        if written_ints == 0:
                             f_r.write(f"{str(cases)}\n")
-                        elif written == 1:
+                        elif written_ints == 1:
                             f_r.write(f"{seed}\n")
                         else:
                             f_r.write(line)
-                        written += 1
+                            f_r.write("\n")
+                        written_ints += 1
+                    else:
+                        f_r.write(line)
+                        f_r.write("\n")
 
     def __init__(self, time_limit: float, problem: KattisProblem, program: Program,
-                 submission_logger: logging.Logger, case_seed_file, fuzzing_directory):
+                 submission_logger: logging.Logger, case_seed_file: pathlib.Path, fuzzing_directory):
         self.time_limit = time_limit
         self.problem: KattisProblem = problem
         self.program = program
@@ -215,6 +234,9 @@ class FuzzingRun(object):
 
         self.test_data = TestCaseGroup(problem, fuzzing_directory)
 
+    def _run_make(self, rule):
+        run_make(self.problem_directory, rule)
+
     def _write_case(self, case: List[str]):
         with self.input_file.open(mode="wt", encoding="utf-8") as f:
             for line in case:
@@ -227,20 +249,11 @@ class FuzzingRun(object):
         self.alternate_limit = not self.alternate_limit
         return self.test_data.run_submission(self.program, self.args, self.time_limit, time_limit_high)
 
-    def _run_make(self, rule: Union[str, Path]):
-        logger.debug("Make %s", rule)
-        if isinstance(rule, Path):
-            rule = rule.relative_to(self.problem_directory)
-        process = subprocess.Popen(["make", rule], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   encoding="utf-8", cwd=str(self.problem_directory))
-        out, err = process.communicate(timeout=10)
-        if process.returncode != 0:
-            raise MakeError(rule, out, err)
-
     def __enter__(self):
         return self
 
     def evaluate(self) -> RunResult:
+        self._run_make("checker")
         (result1, result2) = self._run_submission()
         logger.debug("Received initial feedback %s / %s", result1.verdict, result2.verdict)
 
@@ -304,7 +317,8 @@ class FuzzingRun(object):
             run_feedback = FuzzingRun.parse_feedback(result1)
             run_verdict = RunVerdict.get(result1.verdict)
 
-        logger.debug("Finished run on %s with verdict %s", self.seed, run_verdict)
+        logger.debug("Finished run on %s (with seed %s) with verdict %s",
+                     self.case_seed_file.name, self.seed, run_verdict)
         return RunResult(self.problem, self.seed_file, self.input_file, self.answer_file, run_verdict, run_feedback)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -375,20 +389,25 @@ class Fuzzer(object):
                         raise ValueError(f"Compile error for program {program.name}: {error}")
 
                     run_results = []
+
+                    request.logger.info("Setting up problem")
+                    run_make(request.problem_directory, "checker")
                     with KattisProblem(request.problem_directory) as problem:
+                        # Compiles validator
+                        problem.output_validators.check(None)
+
                         request.logger.info("Starting randomization")
                         fails = 0
                         for i in range(request.run_count):
                             with FuzzingRun(request.time_limit, problem, program, request.logger,
                                             request.seed_file, fuzzing_directory) as run:
                                 run_result = run.evaluate()
-                                if run_result.verdict == RunVerdict.CORRECT:
-                                    continue
                                 if run_result.verdict == RunVerdict.FEEDBACK_INCONSISTENCY:
                                     request.logger.warning("Program has feedback inconsistencies")
-                                    return
-                                fails += 1
-                                run_results.append(run_result)
+                                    break
+                                if run_result.verdict != RunVerdict.CORRECT:
+                                    fails += 1
+                                    run_results.append(run_result)
 
                             request.logger.info("Finished %d runs of %d (%d failed)", i + 1, request.run_count, fails)
                             if fails >= Fuzzer.MAX_FAILS:
