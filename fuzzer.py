@@ -2,6 +2,7 @@ import dataclasses
 import enum
 import logging
 import pathlib
+import math
 import random
 import re
 import shutil
@@ -180,6 +181,23 @@ class FuzzingRun(object):
         return feedback_files
 
     @staticmethod
+    def get_seed(original: Path):
+        with original.open(mode="rt") as f:
+            ints = 0
+            for line in f.readlines():
+                comment_index = line.find('#')
+                if comment_index >= 0:
+                    line = line[:comment_index]
+                line = line.strip()
+                if not line:
+                    continue
+                if line.isnumeric():
+                    if ints == 1:
+                        return int(line)
+                ints += 1
+        return None
+
+    @staticmethod
     def randomize(original: Path, randomized: Path, cases: int, seed: str):
         with original.open(mode="rt") as f_o:
             with randomized.open(mode="wt") as f_r:
@@ -214,7 +232,11 @@ class FuzzingRun(object):
         self.alternate_limit = False
 
         self.case_seed_file = case_seed_file
-        self.seed = str(random.getrandbits(63))
+        original_seed = FuzzingRun.get_seed(self.case_seed_file)
+        if original_seed is None:
+            raise ValueError(f"Incompatible seed file structure {self.case_seed_file}")
+        seed_bits = math.floor(math.log(abs(original_seed), 2))
+        self.seed = str(abs(random.getrandbits(seed_bits)))
 
         self.seed_file: Path = fuzzing_directory / f"{self.seed}.seed"
         self.input_file: Path = fuzzing_directory / f"{self.seed}.in"
