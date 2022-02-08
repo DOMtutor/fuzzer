@@ -191,10 +191,15 @@ class FuzzingRun(object):
                 line = line.strip()
                 if not line:
                     continue
-                if line.isnumeric():
+                value = None
+                try:
+                    value = int(line)
+                except ValueError:
+                    pass
+                if value is not None:
                     if ints == 1:
-                        return int(line)
-                ints += 1
+                        return value
+                    ints += 1
         return None
 
     @staticmethod
@@ -209,7 +214,12 @@ class FuzzingRun(object):
                     line = line.strip()
                     if not line:
                         continue
-                    if line.isnumeric():
+                    try:
+                        int(line)
+                        is_number = True
+                    except ValueError:
+                        is_number = False
+                    if is_number:
                         if written_ints == 0:
                             f_r.write(f"{str(cases)}\n")
                         elif written_ints == 1:
