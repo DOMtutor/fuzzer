@@ -214,7 +214,6 @@ const submit_problem = function () {
         source_name = "main";
     }
 
-    const time_limit = parseInt($('#time_limit').val());
     const runs = parseInt($('#runs').val());
 
     console.log("Submitting as " + source_name);
@@ -226,7 +225,6 @@ const submit_problem = function () {
         "language": lang,
         "sources": source,
         "case_name": secret_name,
-        "time_limit": time_limit,
         "runs": runs
     };
 

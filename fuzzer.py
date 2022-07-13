@@ -2,7 +2,6 @@ import dataclasses
 import enum
 import logging
 import math
-import pathlib
 import random
 import re
 import shutil
@@ -13,7 +12,7 @@ from typing import *
 
 from problemtools import languages, verifyproblem
 from problemtools.run import SourceCode, Program
-from problemtools.verifyproblem import TestCaseGroup, re_argument, SubmissionResult
+from problemtools.verifyproblem import TestCase, TestCaseGroup, re_argument, SubmissionResult
 from pyjudge.repository.kattis import RepositoryProblem, ExecutionError
 
 logger = logging.getLogger(__name__)
@@ -149,7 +148,7 @@ class FuzzingRun(object):
 
     @staticmethod
     def parse_feedback(result: SubmissionResult):
-        if result.additional_info is None:
+        if result.additional_info is None or not result.additional_info.strip():
             return {}
         feedback_files = defaultdict(list)
         current_file = None
@@ -214,12 +213,13 @@ class FuzzingRun(object):
                         f_r.write(line)
                         f_r.write("\n")
 
-    def __init__(self, time_limit: float, problem: RepositoryProblem, program: Program,
-                 submission_logger: logging.Logger, case_seed_file: pathlib.Path, fuzzing_directory):
-        self.time_limit = time_limit
+    def __init__(self, problem: RepositoryProblem, program: Program,
+                 submission_logger: logging.Logger, case_seed_file: Path, fuzzing_directory: Path):
         self.problem: RepositoryProblem = problem
         self.program = program
         self.submission_logger = submission_logger
+
+        self.time_limit = problem.limits.time_s
 
         self.case_seed_file = case_seed_file
         original_seed = FuzzingRun.get_seed(self.case_seed_file)
@@ -228,10 +228,11 @@ class FuzzingRun(object):
         seed_bits = math.floor(math.log(abs(original_seed), 2))
         self.seed = str(abs(random.getrandbits(seed_bits)))
 
-        self.seed_file: Path = fuzzing_directory / f"{self.seed}.seed"
-        self.input_file: Path = fuzzing_directory / f"{self.seed}.in"
-        self.answer_file: Path = fuzzing_directory / f"{self.seed}.ans"
-        # self.problem_directory: Path = pathlib.Path(problem.probdir)
+        file_directory = fuzzing_directory / "data"
+        file_directory.mkdir(exist_ok=True)
+        self.seed_file: Path = file_directory / f"{self.seed}.seed"
+        self.input_file: Path = file_directory / f"{self.seed}.in"
+        self.answer_file: Path = file_directory / f"{self.seed}.ans"
 
         self.args = verifyproblem.default_args()
         self.args.bail_on_error = False
@@ -240,12 +241,7 @@ class FuzzingRun(object):
         self.args.data_filter = re_argument(f"{self.seed}$")
         self.args.use_result_cache = False
 
-        # Need to make the case before creating the test case group
-        FuzzingRun.randomize(self.case_seed_file, self.seed_file, FuzzingRun.RANDOM_RUNS, self.seed)
-        self.problem.generate_input_if_required(self.seed_file, self.input_file)
-        self.problem.generate_answer_if_required(self.input_file, self.answer_file)
-
-        self.test_data = TestCaseGroup(problem.kattis_problem(), fuzzing_directory)
+        self.test_data = TestCaseGroup(problem.kattis_problem, fuzzing_directory)
 
     def _write_case(self, case: List[str]):
         with self.input_file.open(mode="wt", encoding="utf-8") as f:
@@ -255,12 +251,17 @@ class FuzzingRun(object):
 
     def _run_submission(self) -> Tuple[SubmissionResult, SubmissionResult]:
         time_limit_high = self.time_limit * 2
-        return self.test_data.run_submission(self.program, self.args, self.time_limit, time_limit_high)
+        self.problem.generate_answer_if_required(self.input_file, self.answer_file)
+        return TestCase(self.problem.kattis_problem, str(self.input_file.with_suffix("")), self.test_data) \
+            .run_submission(self.program, self.args, self.time_limit, time_limit_high)
 
     def __enter__(self):
         return self
 
     def evaluate(self) -> RunResult:
+        FuzzingRun.randomize(self.case_seed_file, self.seed_file, FuzzingRun.RANDOM_RUNS, self.seed)
+        self.problem.generate_input_if_required(self.seed_file, self.input_file)
+
         (result1, result2) = self._run_submission()
         logger.debug("Received initial feedback %s / %s", result1.verdict, result2.verdict)
 
@@ -342,11 +343,10 @@ class FuzzingRequest(object):
     language: Optional[str]
 
     problem: RepositoryProblem
-    seed_file: pathlib.Path
+    seed_file: Path
 
     logger: logging.Logger
 
-    time_limit: int = 2
     run_count: int = 10
 
 
@@ -402,7 +402,7 @@ class Fuzzer(object):
                         request.logger.info("Starting randomization")
                         fails = 0
                         for i in range(request.run_count):
-                            with FuzzingRun(request.time_limit, request.problem, program, request.logger,
+                            with FuzzingRun(request.problem, program, request.logger,
                                             request.seed_file, fuzzing_directory) as run:
                                 run_result = run.evaluate()
                                 if run_result.verdict == RunVerdict.FEEDBACK_INCONSISTENCY:

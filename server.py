@@ -28,10 +28,9 @@ schema = {
             }
         },
         "case_name": {"type": "string"},
-        "time_limit": {"type": "integer", "minimum": 0},
         "runs": {"type": "integer", "minimum": 0}
     },
-    "required": ["problem", "language", "sources", "time_limit", "case_name"]
+    "required": ["problem", "language", "sources", "case_name"]
 }
 
 
@@ -82,7 +81,6 @@ class FuzzingThread(threading.Thread):
                 problem=problem,
                 seed_file=seed_file,
                 logger=submission_logger,
-                time_limit=self.submission.get('time_limit', 2),
                 run_count=self.submission.get('runs', 10)
             )
             result = fuzzer.run(request)
