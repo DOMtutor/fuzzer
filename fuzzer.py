@@ -1,30 +1,22 @@
 import dataclasses
 import enum
 import logging
-import pathlib
 import math
+import pathlib
 import random
 import re
 import shutil
-import subprocess
 import tempfile
-import time
 from collections import defaultdict
 from pathlib import Path
 from typing import *
 
 from problemtools import languages, verifyproblem
 from problemtools.run import SourceCode, Program
-from problemtools.verifyproblem import Problem as KattisProblem, TestCaseGroup, re_argument, SubmissionResult
+from problemtools.verifyproblem import TestCaseGroup, re_argument, SubmissionResult
+from pyjudge.repository.kattis import RepositoryProblem, ExecutionError
 
 logger = logging.getLogger(__name__)
-
-
-class MakeError(Exception):
-    def __init__(self, rule, out, err):
-        self.rule = rule
-        self.out = out
-        self.err = err
 
 
 class ProblemLayout(object):
@@ -152,16 +144,6 @@ class RunResult(object):
             self.answer = f.read()
 
 
-def run_make(base_path: Path, rule: Union[str, Path]):
-    if isinstance(rule, Path):
-        rule = rule.relative_to(base_path)
-    process = subprocess.Popen(["make", rule], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               encoding="utf-8", cwd=str(base_path))
-    out, err = process.communicate(timeout=30)
-    if process.returncode != 0:
-        raise MakeError(rule, out, err)
-
-
 class FuzzingRun(object):
     RANDOM_RUNS = 200
 
@@ -232,14 +214,12 @@ class FuzzingRun(object):
                         f_r.write(line)
                         f_r.write("\n")
 
-    def __init__(self, time_limit: float, problem: KattisProblem, program: Program,
+    def __init__(self, time_limit: float, problem: RepositoryProblem, program: Program,
                  submission_logger: logging.Logger, case_seed_file: pathlib.Path, fuzzing_directory):
         self.time_limit = time_limit
-        self.problem: KattisProblem = problem
+        self.problem: RepositoryProblem = problem
         self.program = program
         self.submission_logger = submission_logger
-
-        self.alternate_limit = False
 
         self.case_seed_file = case_seed_file
         original_seed = FuzzingRun.get_seed(self.case_seed_file)
@@ -251,23 +231,21 @@ class FuzzingRun(object):
         self.seed_file: Path = fuzzing_directory / f"{self.seed}.seed"
         self.input_file: Path = fuzzing_directory / f"{self.seed}.in"
         self.answer_file: Path = fuzzing_directory / f"{self.seed}.ans"
-        self.problem_directory: Path = pathlib.Path(problem.probdir)
+        # self.problem_directory: Path = pathlib.Path(problem.probdir)
 
         self.args = verifyproblem.default_args()
         self.args.bail_on_error = False
         self.args.parts = ["submissions"]
-        self.args.problemdir = self.problem.probdir
+        self.args.problemdir = str(self.problem.directory.absolute())
         self.args.data_filter = re_argument(f"{self.seed}$")
+        self.args.use_result_cache = False
 
         # Need to make the case before creating the test case group
         FuzzingRun.randomize(self.case_seed_file, self.seed_file, FuzzingRun.RANDOM_RUNS, self.seed)
-        self._run_make(self.input_file)
-        self._run_make(self.answer_file)
+        self.problem.generate_input_if_required(self.seed_file, self.input_file)
+        self.problem.generate_answer_if_required(self.input_file, self.answer_file)
 
-        self.test_data = TestCaseGroup(problem, fuzzing_directory)
-
-    def _run_make(self, rule):
-        run_make(self.problem_directory, rule)
+        self.test_data = TestCaseGroup(problem.kattis_problem(), fuzzing_directory)
 
     def _write_case(self, case: List[str]):
         with self.input_file.open(mode="wt", encoding="utf-8") as f:
@@ -276,16 +254,13 @@ class FuzzingRun(object):
                 f.write("\n")
 
     def _run_submission(self) -> Tuple[SubmissionResult, SubmissionResult]:
-        # Trick the cache key ...
-        time_limit_high = self.time_limit * 2 + (0.001 if self.alternate_limit else 0.0)
-        self.alternate_limit = not self.alternate_limit
+        time_limit_high = self.time_limit * 2
         return self.test_data.run_submission(self.program, self.args, self.time_limit, time_limit_high)
 
     def __enter__(self):
         return self
 
     def evaluate(self) -> RunResult:
-        self._run_make("checker")
         (result1, result2) = self._run_submission()
         logger.debug("Received initial feedback %s / %s", result1.verdict, result2.verdict)
 
@@ -303,7 +278,7 @@ class FuzzingRun(object):
             self._write_case(picked_case)
 
             self.submission_logger.debug("Running program again on singular case")
-            self._run_make(self.answer_file)
+            self.problem.generate_answer_if_required(self.input_file, self.answer_file)
             (result1, result2) = self._run_submission()
 
             run_feedback = FuzzingRun.parse_feedback(result1)
@@ -323,7 +298,7 @@ class FuzzingRun(object):
                 self._write_case(first_half)
 
                 self.submission_logger.debug("Running program again on half of remainder")
-                self._run_make(self.answer_file)
+                self.problem.generate_answer_if_required(self.input_file, self.answer_file)
                 (result1, result2) = self._run_submission()
                 if result1.verdict == "RTE":
                     self.submission_logger.debug("RTE occurred in first half")
@@ -337,7 +312,7 @@ class FuzzingRun(object):
             self._write_case(second_half)
 
             self.submission_logger.debug("Running program on RTE case")
-            self._run_make(self.answer_file)
+            self.problem.generate_answer_if_required(self.input_file, self.answer_file)
             (result1, result2) = self._run_submission()
 
             run_feedback = FuzzingRun.parse_feedback(result1)
@@ -366,7 +341,7 @@ class FuzzingRequest(object):
     sources: Dict[str, str]
     language: Optional[str]
 
-    problem_directory: pathlib.Path
+    problem: RepositoryProblem
     seed_file: pathlib.Path
 
     logger: logging.Logger
@@ -397,8 +372,7 @@ class Fuzzer(object):
                 source_directory = directory / "source"
                 compile_directory = directory / "compile"
 
-                # This needs to be inside the problem directory so that we can make the output
-                fuzzing_directory = request.problem_directory / "data" / "fuzzing"
+                fuzzing_directory = directory / "fuzzing"
                 for d in [output_directory, source_directory, compile_directory, fuzzing_directory]:
                     d.mkdir(parents=True, exist_ok=True)
 
@@ -423,15 +397,12 @@ class Fuzzer(object):
                     run_results = []
 
                     request.logger.info("Setting up problem")
-                    run_make(request.problem_directory, "checker")
-                    with KattisProblem(request.problem_directory) as problem:
-                        # Compiles validator
-                        problem.output_validators.check(None)
 
+                    with request.problem as _:
                         request.logger.info("Starting randomization")
                         fails = 0
                         for i in range(request.run_count):
-                            with FuzzingRun(request.time_limit, problem, program, request.logger,
+                            with FuzzingRun(request.time_limit, request.problem, program, request.logger,
                                             request.seed_file, fuzzing_directory) as run:
                                 run_result = run.evaluate()
                                 if run_result.verdict == RunVerdict.FEEDBACK_INCONSISTENCY:
@@ -450,9 +421,9 @@ class Fuzzer(object):
                         logger.info("Finished fuzzing")
 
                         return FuzzingResult(run_results)
-        except MakeError as e:
-            logger.warning("Make rule %s failed with output:\n%s\n===\n%s\n", e.rule, e.out, e.err)
-            request.logger.error("Make failed")
+        except ExecutionError as e:
+            logger.warning("Execution failed with error:\n%s", e.err)
+            request.logger.error("Execution failed")
         except ValueError as e:
             logger.warning("Error during fuzzing: %s", exc_info=e)
             request.logger.error("%s", e)

@@ -13,6 +13,8 @@ from flask_inputs.validators import JsonSchema
 
 from fuzzer import FuzzingRequest, Fuzzer
 
+from pyjudge.repository.kattis import RepositoryProblem, Repository
+
 schema = {
     "type": 'object',
     "properties": {
@@ -38,7 +40,7 @@ class JsonInputs(Inputs):
 
 
 # Root logger
-LOGGING_FORMAT = '%(asctime)s - %(name)s - %(levelname)s%(message)s'
+LOGGING_FORMAT = '%(asctime)s - %(name)s - %(levelname)s %(message)s'
 
 logging.basicConfig(level=logging.DEBUG, format=LOGGING_FORMAT)
 
@@ -72,12 +74,12 @@ class FuzzingThread(threading.Thread):
         submission_logger.setLevel(level=logging.DEBUG)
 
         try:
-            problem_directory = self.repository.problems[self.submission["problem"]].directory
-            seed_file = problem_directory / "data" / "secret" / f"{self.submission['case_name']}.seed"
+            problem = self.repository.problems[self.submission["problem"]]
+            seed_file = problem.directory / "data" / "secret" / f"{self.submission['case_name']}.seed"
             request = FuzzingRequest(
                 sources=self.submission["sources"],
                 language=self.submission["language"],
-                problem_directory=problem_directory,
+                problem=problem,
                 seed_file=seed_file,
                 logger=submission_logger,
                 time_limit=self.submission.get('time_limit', 2),
@@ -180,18 +182,13 @@ def stop_fuzzing(fuzzing_id):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-r", "--repository", help="Path to repository", type=pathlib.Path, required=True)
-    arguments = parser.parse_args()
-
-    repository_path: pathlib.Path = arguments.repository
+    args = parser.parse_args()
+    repository_path: pathlib.Path = args.repository
 
     if not repository_path.is_dir():
         sys.exit(f"Path {repository_path} is not a path")
 
-    sys.path.append(str(repository_path / "scripts"))
-
-    from repository import RepositoryProblem, Repository
-
-    repository = Repository()
+    repository = Repository(repository_path)
     problems: List[RepositoryProblem] = []
     for problem in repository.problems:
         secret_dir = problem.directory / "data" / "secret"
