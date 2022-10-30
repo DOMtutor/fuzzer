@@ -219,7 +219,7 @@ class FuzzingRun(object):
         self.program = program
         self.submission_logger = submission_logger
 
-        self.time_limit = problem.limits.time_s
+        self.time_limit = problem.limits.time_factor # TODO Fix with base time
 
         self.case_seed_file = case_seed_file
         original_seed = FuzzingRun.get_seed(self.case_seed_file)
