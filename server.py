@@ -150,6 +150,7 @@ def show_status():
 
 @app.route('/submission', methods=['POST'])
 def start_fuzzing():
+
     inputs = JsonInputs(request)
     if not inputs.validate():
         app.logger.debug("Invalid JSON request: %s", request)

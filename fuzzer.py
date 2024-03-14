@@ -1,5 +1,6 @@
 import dataclasses
 import enum
+import io
 import logging
 import math
 import random
@@ -9,6 +10,8 @@ import tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import *
+
+import yaml
 
 from problemtools import languages, verifyproblem
 from problemtools.run import SourceCode, Program
@@ -143,6 +146,10 @@ class RunResult(object):
             self.answer = f.read()
 
 
+class SeedStructure(enum.Enum):
+    MULTIPLE_CASES = "multiple"
+    SINGLE_CASE = "single"
+
 class FuzzingRun(object):
     RANDOM_RUNS = 200
 
@@ -162,56 +169,69 @@ class FuzzingRun(object):
         return feedback_files
 
     @staticmethod
-    def get_seed(original: Path):
+    def _strip_comments(line: str) -> str:
+        comment_index = line.find('#')
+        if comment_index >= 0:
+            line = line[:comment_index]
+        return line.strip()
+
+    @staticmethod
+    def _non_empty_lines(it: Iterable[str]) -> Iterable[str]:
+        for line in it:
+            line = FuzzingRun._strip_comments(line)
+            if line:
+                yield line
+
+    @staticmethod
+    def detect_seed_type(original: Path) -> Optional[SeedStructure]:
         with original.open(mode="rt") as f:
-            ints = 0
-            for line in f.readlines():
-                comment_index = line.find('#')
-                if comment_index >= 0:
-                    line = line[:comment_index]
-                line = line.strip()
-                if not line:
-                    continue
-                value = None
+            candidate = None
+            for line in FuzzingRun._non_empty_lines(f.readlines()):
                 try:
                     value = int(line)
                 except ValueError:
-                    pass
-                if value is not None:
-                    if ints == 1:
-                        return value
-                    ints += 1
+                    return SeedStructure.SINGLE_CASE if candidate is not None else None
+                if candidate is None:
+                    candidate = value
+                elif 0 < candidate <= 20:
+                    return SeedStructure.MULTIPLE_CASES
+
+
+    @staticmethod
+    def get_seed(original: Path, structure: SeedStructure):
+        with original.open(mode="rt") as f:
+            if structure == SeedStructure.SINGLE_CASE:
+                for line in FuzzingRun._non_empty_lines(f.readlines()):
+                    if line:
+                        return int(line)
+            elif structure == SeedStructure.MULTIPLE_CASES:
+                lines = iter(FuzzingRun._non_empty_lines(f.readlines()))
+                next(lines)
+                return int(next(lines))
         return None
 
     @staticmethod
-    def randomize(original: Path, randomized: Path, cases: int, seed: str):
+    def randomize_single(original: Path, randomized: Path, seed: str):
         with original.open(mode="rt") as f_o:
             with randomized.open(mode="wt") as f_r:
-                written_ints = 0
-                for line in f_o.readlines():
-                    comment_index = line.find('#')
-                    if comment_index >= 0:
-                        line = line[:comment_index]
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        int(line)
-                        is_number = True
-                    except ValueError:
-                        is_number = False
-                    if is_number:
-                        if written_ints == 0:
-                            f_r.write(f"{str(cases)}\n")
-                        elif written_ints == 1:
-                            f_r.write(f"{seed}\n")
-                        else:
-                            f_r.write(line)
-                            f_r.write("\n")
-                        written_ints += 1
-                    else:
-                        f_r.write(line)
-                        f_r.write("\n")
+                lines = iter(FuzzingRun._non_empty_lines(f_o.readlines()))
+                next(lines)
+                f_r.write(f"{seed}\n")
+                for line in lines:
+                    f_r.write(f"{line}\n")
+
+    @staticmethod
+    def randomize_multiple(original: Path, randomized: Path, cases: int, seed: str):
+        with original.open(mode="rt") as f_o:
+            with randomized.open(mode="wt") as f_r:
+                lines = iter(FuzzingRun._non_empty_lines(f_o.readlines()))
+                next(lines)
+                next(lines)
+                f_r.write(f"{cases}\n")
+                f_r.write(f"{seed}\n")
+                for line in lines:
+                    f_r.write(f"{line}\n")
+
 
     def __init__(self, problem: RepositoryProblem, program: Program,
                  submission_logger: logging.Logger, case_seed_file: Path, fuzzing_directory: Path):
@@ -219,12 +239,13 @@ class FuzzingRun(object):
         self.program = program
         self.submission_logger = submission_logger
 
-        self.time_limit = problem.limits.time_factor # TODO Fix with base time
+        self.time_limit = problem.limits.time_factor  # TODO Fix with base time
 
         self.case_seed_file = case_seed_file
-        original_seed = FuzzingRun.get_seed(self.case_seed_file)
-        if original_seed is None:
+        self.seed_type = FuzzingRun.detect_seed_type(self.case_seed_file)
+        if self.seed_type is None:
             raise ValueError(f"Incompatible seed file structure {self.case_seed_file}")
+        original_seed = FuzzingRun.get_seed(self.case_seed_file, self.seed_type)
         seed_bits = math.floor(math.log(abs(original_seed), 2))
         self.seed = str(abs(random.getrandbits(seed_bits)))
 
@@ -249,81 +270,97 @@ class FuzzingRun(object):
                 f.write(line)
                 f.write("\n")
 
-    def _run_submission(self) -> Tuple[SubmissionResult, SubmissionResult]:
+    def _run_submission(self) -> Tuple[SubmissionResult, SubmissionResult, SubmissionResult]:
         time_limit_high = self.time_limit * 2
         self.problem.generate_answer_if_required(self.input_file, self.answer_file)
         return TestCase(self.problem.kattis_problem, str(self.input_file.with_suffix("")), self.test_data) \
-            .run_submission(self.program, self.args, self.time_limit, time_limit_high)
+            .run_submission(self.program, self.args, self.time_limit, int(self.time_limit + 1), int(time_limit_high))
 
     def __enter__(self):
         return self
 
     def evaluate(self) -> RunResult:
-        FuzzingRun.randomize(self.case_seed_file, self.seed_file, FuzzingRun.RANDOM_RUNS, self.seed)
-        self.problem.generate_input_if_required(self.seed_file, self.input_file)
+        if self.seed_type == SeedStructure.MULTIPLE_CASES:
+            FuzzingRun.randomize_multiple(self.case_seed_file, self.seed_file, FuzzingRun.RANDOM_RUNS, self.seed)
+            self.problem.generate_input_if_required(self.seed_file, self.input_file)
 
-        (result1, result2) = self._run_submission()
-        logger.debug("Received initial feedback %s / %s", result1.verdict, result2.verdict)
+            result, _, _ = self._run_submission()
+            logger.debug("Received initial feedback %s", result)
 
-        if result1.verdict is None or result1.runtime == -1.0:
-            raise ValueError("No executions")
+            if result.verdict is None or result.runtime == -1.0:
+                raise ValueError("No executions")
 
-        if result1.verdict == "WA":
-            logger.debug("Picking failing case")
-            self.submission_logger.debug("Found problematic input, picking failing case")
-            feedback_files = FuzzingRun.parse_feedback(result1)
-            failing_case = ProblemLayout.first_failing_case(feedback_files["judgemessage.txt"], self.answer_file)
+            if result.verdict == "WA":
+                logger.debug("Picking failing case")
+                self.submission_logger.debug("Found problematic input, picking failing case")
+                feedback_files = FuzzingRun.parse_feedback(result)
+                failing_case = ProblemLayout.first_failing_case(feedback_files["judgemessage.txt"], self.answer_file)
 
-            layout = ProblemLayout(self.input_file)
-            picked_case = layout.pick_case(self.input_file, failing_case)
-            self._write_case(picked_case)
+                layout = ProblemLayout(self.input_file)
+                picked_case = layout.pick_case(self.input_file, failing_case)
+                self._write_case(picked_case)
 
-            self.submission_logger.debug("Running program again on singular case")
-            self.problem.generate_answer_if_required(self.input_file, self.answer_file)
-            (result1, result2) = self._run_submission()
-
-            run_feedback = FuzzingRun.parse_feedback(result1)
-            if result1.verdict == "WA":
-                run_verdict = RunVerdict.WRONG_ANSWER
-            else:
-                run_verdict = RunVerdict.FEEDBACK_INCONSISTENCY
-        elif result1.verdict == "RTE":
-            # binary search for the error
-            logger.debug("Search for RTE case")
-            self.submission_logger.debug("Runtime error occurred, binary search for the test case")
-
-            layout = ProblemLayout(self.input_file)
-            first_half, second_half = layout.split_case(self.input_file)
-
-            while first_half[0] != "0":
-                self._write_case(first_half)
-
-                self.submission_logger.debug("Running program again on half of remainder")
+                self.submission_logger.debug("Running program again on singular case")
                 self.problem.generate_answer_if_required(self.input_file, self.answer_file)
-                (result1, result2) = self._run_submission()
-                if result1.verdict == "RTE":
-                    self.submission_logger.debug("RTE occurred in first half")
-                else:
-                    self.submission_logger.debug("RTE occurred in second half")
-                    self._write_case(second_half)
+                result, _, _ = self._run_submission()
 
+                run_feedback = FuzzingRun.parse_feedback(result)
+                if result.verdict == "WA":
+                    run_verdict = RunVerdict.WRONG_ANSWER
+                else:
+                    run_verdict = RunVerdict.FEEDBACK_INCONSISTENCY
+            elif result.verdict == "RTE":
+                # binary search for the error
+                logger.debug("Search for RTE case")
+                self.submission_logger.debug("Runtime error occurred, binary search for the test case")
+
+                layout = ProblemLayout(self.input_file)
                 first_half, second_half = layout.split_case(self.input_file)
 
-            self.submission_logger.debug("Should have RTE case now")
-            self._write_case(second_half)
+                while first_half[0] != "0":
+                    self._write_case(first_half)
 
-            self.submission_logger.debug("Running program on RTE case")
-            self.problem.generate_answer_if_required(self.input_file, self.answer_file)
-            (result1, result2) = self._run_submission()
+                    self.submission_logger.debug("Running program again on half of remainder")
+                    self.problem.generate_answer_if_required(self.input_file, self.answer_file)
+                    result, _, _ = self._run_submission()
+                    if result.verdict == "RTE":
+                        self.submission_logger.debug("RTE occurred in first half")
+                    else:
+                        self.submission_logger.debug("RTE occurred in second half")
+                        self._write_case(second_half)
 
-            run_feedback = FuzzingRun.parse_feedback(result1)
-            if result1.verdict == "RTE":
-                run_verdict = RunVerdict.RUNTIME_EXCEPTION
+                    first_half, second_half = layout.split_case(self.input_file)
+
+                self.submission_logger.debug("Should have RTE case now")
+                self._write_case(second_half)
+
+                self.submission_logger.debug("Running program on RTE case")
+                self.problem.generate_answer_if_required(self.input_file, self.answer_file)
+                result, _, _ = self._run_submission()
+
+                run_feedback = FuzzingRun.parse_feedback(result)
+                if result.verdict == "RTE":
+                    run_verdict = RunVerdict.RUNTIME_EXCEPTION
+                else:
+                    run_verdict = RunVerdict.FEEDBACK_INCONSISTENCY
             else:
-                run_verdict = RunVerdict.FEEDBACK_INCONSISTENCY
+                run_feedback = FuzzingRun.parse_feedback(result)
+                run_verdict = RunVerdict.get(result.verdict)
+
+        elif self.seed_type == SeedStructure.SINGLE_CASE:
+            FuzzingRun.randomize_single(self.case_seed_file, self.seed_file, self.seed)
+            self.problem.generate_input_if_required(self.seed_file, self.input_file)
+
+            result, _, _ = self._run_submission()
+            logger.debug("Received feedback %s", result)
+
+            if result.verdict is None or result.runtime == -1.0:
+                raise ValueError("No executions")
+
+            run_feedback = FuzzingRun.parse_feedback(result)
+            run_verdict = RunVerdict.get(result.verdict)
         else:
-            run_feedback = FuzzingRun.parse_feedback(result1)
-            run_verdict = RunVerdict.get(result1.verdict)
+            raise AssertionError
 
         logger.debug("Finished run on %s (with seed %s) with verdict %s",
                      self.case_seed_file.name, self.seed, run_verdict)
