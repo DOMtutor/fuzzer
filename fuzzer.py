@@ -1,6 +1,5 @@
 import dataclasses
 import enum
-import io
 import logging
 import math
 import random
@@ -9,13 +8,16 @@ import shutil
 import tempfile
 from collections import defaultdict
 from pathlib import Path
-from typing import *
-
-import yaml
+from typing import Dict, Tuple, Optional, List, Collection, Iterable
 
 from problemtools import languages, verifyproblem
 from problemtools.run import SourceCode, Program
-from problemtools.verifyproblem import TestCase, TestCaseGroup, re_argument, SubmissionResult
+from problemtools.verifyproblem import (
+    TestCase,
+    TestCaseGroup,
+    re_argument,
+    SubmissionResult,
+)
 from pyjudge.repository.kattis import RepositoryProblem, ExecutionError
 
 logger = logging.getLogger(__name__)
@@ -32,7 +34,7 @@ class ProblemLayout(object):
             with solution.open(mode="rt") as f:
                 case = 0
                 for i, line in enumerate(f.readlines()):
-                    if line.startswith('Case #'):
+                    if line.startswith("Case #"):
                         case += 1
                     if i + 1 == test_line:
                         return case
@@ -129,8 +131,15 @@ class RunVerdict(enum.Enum):
 
 
 class RunResult(object):
-    def __init__(self, problem, seed_file: Path, input_file: Path, answer_file: Path,
-                 verdict: RunVerdict, feedback: Dict[str, str]):
+    def __init__(
+        self,
+        problem,
+        seed_file: Path,
+        input_file: Path,
+        answer_file: Path,
+        verdict: RunVerdict,
+        feedback: Dict[str, str],
+    ):
         self.verdict = verdict
         self.feedback = feedback
 
@@ -149,6 +158,7 @@ class RunResult(object):
 class SeedStructure(enum.Enum):
     MULTIPLE_CASES = "multiple"
     SINGLE_CASE = "single"
+
 
 class FuzzingRun(object):
     RANDOM_RUNS = 200
@@ -170,7 +180,7 @@ class FuzzingRun(object):
 
     @staticmethod
     def _strip_comments(line: str) -> str:
-        comment_index = line.find('#')
+        comment_index = line.find("#")
         if comment_index >= 0:
             line = line[:comment_index]
         return line.strip()
@@ -195,7 +205,6 @@ class FuzzingRun(object):
                     candidate = value
                 elif 0 < candidate <= 20:
                     return SeedStructure.MULTIPLE_CASES
-
 
     @staticmethod
     def get_seed(original: Path, structure: SeedStructure):
@@ -232,9 +241,14 @@ class FuzzingRun(object):
                 for line in lines:
                     f_r.write(f"{line}\n")
 
-
-    def __init__(self, problem: RepositoryProblem, program: Program,
-                 submission_logger: logging.Logger, case_seed_file: Path, fuzzing_directory: Path):
+    def __init__(
+        self,
+        problem: RepositoryProblem,
+        program: Program,
+        submission_logger: logging.Logger,
+        case_seed_file: Path,
+        fuzzing_directory: Path,
+    ):
         self.problem: RepositoryProblem = problem
         self.program = program
         self.submission_logger = submission_logger
@@ -270,18 +284,31 @@ class FuzzingRun(object):
                 f.write(line)
                 f.write("\n")
 
-    def _run_submission(self) -> Tuple[SubmissionResult, SubmissionResult, SubmissionResult]:
+    def _run_submission(
+        self,
+    ) -> Tuple[SubmissionResult, SubmissionResult, SubmissionResult]:
         time_limit_high = self.time_limit * 2
         self.problem.generate_answer_if_required(self.input_file, self.answer_file)
-        return TestCase(self.problem.kattis_problem, str(self.input_file.with_suffix("")), self.test_data) \
-            .run_submission(self.program, self.args, self.time_limit, int(self.time_limit + 1), int(time_limit_high))
+        return TestCase(
+            self.problem.kattis_problem,
+            str(self.input_file.with_suffix("")),
+            self.test_data,
+        ).run_submission(
+            self.program,
+            self.args,
+            self.time_limit,
+            int(self.time_limit + 1),
+            int(time_limit_high),
+        )
 
     def __enter__(self):
         return self
 
     def evaluate(self) -> RunResult:
         if self.seed_type == SeedStructure.MULTIPLE_CASES:
-            FuzzingRun.randomize_multiple(self.case_seed_file, self.seed_file, FuzzingRun.RANDOM_RUNS, self.seed)
+            FuzzingRun.randomize_multiple(
+                self.case_seed_file, self.seed_file, FuzzingRun.RANDOM_RUNS, self.seed
+            )
             self.problem.generate_input_if_required(self.seed_file, self.input_file)
 
             result, _, _ = self._run_submission()
@@ -292,16 +319,22 @@ class FuzzingRun(object):
 
             if result.verdict == "WA":
                 logger.debug("Picking failing case")
-                self.submission_logger.debug("Found problematic input, picking failing case")
+                self.submission_logger.debug(
+                    "Found problematic input, picking failing case"
+                )
                 feedback_files = FuzzingRun.parse_feedback(result)
-                failing_case = ProblemLayout.first_failing_case(feedback_files["judgemessage.txt"], self.answer_file)
+                failing_case = ProblemLayout.first_failing_case(
+                    feedback_files["judgemessage.txt"], self.answer_file
+                )
 
                 layout = ProblemLayout(self.input_file)
                 picked_case = layout.pick_case(self.input_file, failing_case)
                 self._write_case(picked_case)
 
                 self.submission_logger.debug("Running program again on singular case")
-                self.problem.generate_answer_if_required(self.input_file, self.answer_file)
+                self.problem.generate_answer_if_required(
+                    self.input_file, self.answer_file
+                )
                 result, _, _ = self._run_submission()
 
                 run_feedback = FuzzingRun.parse_feedback(result)
@@ -312,7 +345,9 @@ class FuzzingRun(object):
             elif result.verdict == "RTE":
                 # binary search for the error
                 logger.debug("Search for RTE case")
-                self.submission_logger.debug("Runtime error occurred, binary search for the test case")
+                self.submission_logger.debug(
+                    "Runtime error occurred, binary search for the test case"
+                )
 
                 layout = ProblemLayout(self.input_file)
                 first_half, second_half = layout.split_case(self.input_file)
@@ -320,8 +355,12 @@ class FuzzingRun(object):
                 while first_half[0] != "0":
                     self._write_case(first_half)
 
-                    self.submission_logger.debug("Running program again on half of remainder")
-                    self.problem.generate_answer_if_required(self.input_file, self.answer_file)
+                    self.submission_logger.debug(
+                        "Running program again on half of remainder"
+                    )
+                    self.problem.generate_answer_if_required(
+                        self.input_file, self.answer_file
+                    )
                     result, _, _ = self._run_submission()
                     if result.verdict == "RTE":
                         self.submission_logger.debug("RTE occurred in first half")
@@ -335,7 +374,9 @@ class FuzzingRun(object):
                 self._write_case(second_half)
 
                 self.submission_logger.debug("Running program on RTE case")
-                self.problem.generate_answer_if_required(self.input_file, self.answer_file)
+                self.problem.generate_answer_if_required(
+                    self.input_file, self.answer_file
+                )
                 result, _, _ = self._run_submission()
 
                 run_feedback = FuzzingRun.parse_feedback(result)
@@ -362,9 +403,20 @@ class FuzzingRun(object):
         else:
             raise AssertionError
 
-        logger.debug("Finished run on %s (with seed %s) with verdict %s",
-                     self.case_seed_file.name, self.seed, run_verdict)
-        return RunResult(self.problem, self.seed_file, self.input_file, self.answer_file, run_verdict, run_feedback)
+        logger.debug(
+            "Finished run on %s (with seed %s) with verdict %s",
+            self.case_seed_file.name,
+            self.seed,
+            run_verdict,
+        )
+        return RunResult(
+            self.problem,
+            self.seed_file,
+            self.input_file,
+            self.answer_file,
+            run_verdict,
+            run_feedback,
+        )
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         for file in [self.input_file, self.seed_file, self.answer_file]:
@@ -410,7 +462,12 @@ class Fuzzer(object):
                 compile_directory = directory / "compile"
 
                 fuzzing_directory = directory / "fuzzing"
-                for d in [output_directory, source_directory, compile_directory, fuzzing_directory]:
+                for d in [
+                    output_directory,
+                    source_directory,
+                    compile_directory,
+                    fuzzing_directory,
+                ]:
                     d.mkdir(parents=True, exist_ok=True)
 
                 for name, source_code in request.sources.items():
@@ -418,18 +475,28 @@ class Fuzzer(object):
                     with source_file.open(mode="wt") as source:
                         source.write(source_code)
 
-                    language = self.language_config.languages.get(request.language, None)
+                    language = self.language_config.languages.get(
+                        request.language, None
+                    )
                     if language is None:
-                        source_files = [str(path) for path in source_directory.iterdir()]
+                        source_files = [
+                            str(path) for path in source_directory.iterdir()
+                        ]
                         language = self.language_config.detect_language(source_files)
 
                     request.logger.info("Using language %s", language.name)
-                    program = SourceCode(str(source_directory), language=language, work_dir=str(compile_directory))
+                    program = SourceCode(
+                        str(source_directory),
+                        language=language,
+                        work_dir=str(compile_directory),
+                    )
 
                     request.logger.info("Compiling program")
                     (compilation_result, error) = program.compile()
                     if not compilation_result:
-                        raise ValueError(f"Compile error for program {program.name}: {error}")
+                        raise ValueError(
+                            f"Compile error for program {program.name}: {error}"
+                        )
 
                     run_results = []
 
@@ -439,17 +506,32 @@ class Fuzzer(object):
                         request.logger.info("Starting randomization")
                         fails = 0
                         for i in range(request.run_count):
-                            with FuzzingRun(request.problem, program, request.logger,
-                                            request.seed_file, fuzzing_directory) as run:
+                            with FuzzingRun(
+                                request.problem,
+                                program,
+                                request.logger,
+                                request.seed_file,
+                                fuzzing_directory,
+                            ) as run:
                                 run_result = run.evaluate()
-                                if run_result.verdict == RunVerdict.FEEDBACK_INCONSISTENCY:
-                                    request.logger.warning("Program has feedback inconsistencies")
+                                if (
+                                    run_result.verdict
+                                    == RunVerdict.FEEDBACK_INCONSISTENCY
+                                ):
+                                    request.logger.warning(
+                                        "Program has feedback inconsistencies"
+                                    )
                                     break
                                 if run_result.verdict != RunVerdict.CORRECT:
                                     fails += 1
                                     run_results.append(run_result)
 
-                            request.logger.info("Finished %d runs of %d (%d failed)", i + 1, request.run_count, fails)
+                            request.logger.info(
+                                "Finished %d runs of %d (%d failed)",
+                                i + 1,
+                                request.run_count,
+                                fails,
+                            )
                             if fails >= Fuzzer.MAX_FAILS:
                                 request.logger.info("Enough runs failed, ending run")
                                 break
