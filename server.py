@@ -13,7 +13,7 @@ from flask_inputs.validators import JsonSchema
 
 from fuzzer import FuzzingRequest, Fuzzer
 
-from pyjudge.repository.kattis import RepositoryProblem, Repository
+from pydomjudge.repository.kattis import RepositoryProblem, Repository
 
 app = Flask(__name__)
 

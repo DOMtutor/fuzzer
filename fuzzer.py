@@ -18,7 +18,7 @@ from problemtools.verifyproblem import (
     re_argument,
     SubmissionResult,
 )
-from pyjudge.repository.kattis import RepositoryProblem, ExecutionError
+from pydomjudge.repository.kattis import RepositoryProblem, ExecutionError
 
 logger = logging.getLogger(__name__)
 
