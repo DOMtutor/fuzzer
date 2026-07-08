@@ -1,11 +1,15 @@
-# Setup
+# DOMtutor fuzzer
 
-## Requirements
+This project is archived, the code is moved to the pyjudge repository to simplify maintenance.
+
+## Setup
+
+### Requirements
 
 * checktestdata: `build-essentials`, `automake`, `libboost-dev`, `libgmp-dev`
 * compilation: `pypy3` (and Java, C++, ...)
 
-## Procedure
+### Procedure
 
 * `git submodule update --init --recursive`
 * `cd problemtools/support && make`
